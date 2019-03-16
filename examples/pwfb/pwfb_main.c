@@ -348,6 +348,9 @@ int pwfb_main(int argc, char *argv[])
 
   /* Set up for motion */
 
+  wstate.wndo[0].xmax   = itob32(wstate.xres - size.w - 1);
+  wstate.wndo[0].ymax   = itob32(wstate.yres - size.h - 1);
+  wstate.wndo[0].ypos   = itob32(pt.y);
   wstate.wndo[0].xpos   = itob32(pt.x);
   wstate.wndo[0].ypos   = itob32(pt.y);
   wstate.wndo[0].deltax = dtob32(1.58)
@@ -394,6 +397,8 @@ int pwfb_main(int argc, char *argv[])
 
   /* Set up for motion */
 
+  wstate.wndo[1].xmax   = itob32(wstate.xres - size.w - 1);
+  wstate.wndo[1].ymax   = itob32(wstate.yres - size.h - 1);
   wstate.wndo[1].xpos   = itob32(pt.x);
   wstate.wndo[1].ypos   = itob32(pt.y);
   wstate.wndo[1].deltax = dtob32(-1.13)
@@ -440,6 +445,8 @@ int pwfb_main(int argc, char *argv[])
 
   /* Set up for motion */
 
+  wstate.wndo[2].xmax   = itob32(wstate.xres - size.w - 1);
+  wstate.wndo[2].ymax   = itob32(wstate.yres - size.h - 1);
   wstate.wndo[2].xpos   = itob32(pt.x);
   wstate.wndo[2].ypos   = itob32(pt.y);
   wstate.wndo[2].deltax = dtob32(5.0)

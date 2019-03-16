@@ -39,6 +39,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdbool.h>
 #include <errno.h>
 
 #include <nuttx/nx/nxglib.h>
@@ -51,52 +52,77 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: nxeg_setposition
+ * Name: nxeg_move_window
  ****************************************************************************/
 
-static inline int nxeg_setposition(NXEGWINDOW hwnd,
-                                   FAR struct nxgl_point_s *pos)
+static inline void nxeg_move_window(FAR struct nxeg_state_s *st, int i)
 {
-  int ret = nxtk_setposition(hwnd, pos);
-  if (ret < 0)
+  FAR struct nxeg_window_s *wndo = &st->wndo[i];
+  FAR struct nxgl_point_s pos;
+  b32_t newx;
+  b32_t newy;
+  bool hit = false;
+  int ret;
+
+  /* Update X position */
+
+  newx             = wndo->xpos + wndo->deltax;
+
+  /* Check for collision with left or right side */
+
+  if (newx <= 0)
     {
-      printf("nxeg_setposition: nxtk_setposition failed: %d\n", errno);
-      g_exitcode = NXEXIT_NXSETPOSITION;
+      newx         = 0;
+      wndo->deltax = -wndo->deltax;
+      hit          = true;
+    }
+  else if (newx >= wndo->xmax)
+    {
+      newx         = wndo->xmax;
+      wndo->deltax = -wndo->deltax;
+      hit          = true;
     }
 
-  return ret;
-}
+  wndo->xpos       = newx;
 
-/****************************************************************************
- * Name: nxeg_lower
- ****************************************************************************/
+  /* Update Y position */
 
-static inline int nxeg_lower(NXEGWINDOW hwnd)
-{
-  int ret = nxtk_lower(hwnd);
-  if (ret < 0)
+  newy             = wndo->ypos + wndo->deltay;
+
+  /* Check for collision with top or bottom side */
+
+  if (newy <= 0)
     {
-      printf("nxeg_lower: nxtk_lower failed: %d\n", errno);
-      g_exitcode = NXEXIT_NXLOWER;
+      newy         = 0;
+      wndo->deltay = -wndo->deltay;
+      hit          = true;
+    }
+  else if (newy >= wndo->ymax)
+    {
+      newy         = wndo->ymax;
+      wndo->deltay = -wndo->deltay;
+      hit          = true;
     }
 
-  return ret;
-}
+  wndo->ypos       = newy;
 
-/****************************************************************************
- * Name: nxeg_raise
- ****************************************************************************/
+  /* Set the new window position */
 
-static inline int nxeg_raise(NXEGWINDOW hwnd)
-{
-  int ret = nxtk_raise(hwnd);
+  pos.x            = b32toi(newx);
+  pos.y            = b32toi(newy);
+  ret              = nxtk_setposition(st->hwnd, &pos);
   if (ret < 0)
     {
-      printf("nxeg_raise: nxtk_raise failed: %d\n", errno);
-      g_exitcode = NXEXIT_NXRAISE;
+      printf("nxeg_move_window: nxtk_setposition failed: %d\n", errno);
     }
 
-  return ret;
+  /* If we hit an edge, the raise the window */
+
+  ret              = nxtk_raise(st->hwnd);
+  if (ret < 0)
+    {
+      printf("nxeg_move_window: nxtk_raise failed: %d\n", errno);
+    }
 }
 
 /****************************************************************************
@@ -109,4 +135,12 @@ static inline int nxeg_raise(NXEGWINDOW hwnd)
 
 void nxeg_motion(FAR struct nxeg_state_s *st)
 {
+  int i;
+
+  /* Move each window */
+
+  for (i = 0; i < 3; i++)
+    {
+      nxeg_move_window(st, i);
+    }
 }
