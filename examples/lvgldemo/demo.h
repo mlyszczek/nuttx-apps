@@ -1,8 +1,8 @@
 /****************************************************************************
  * apps/examples/lvgldemo/demo.h
  *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gábor Kiss-Vámosi <kisvegabor@gmail.com>
+ *   Copyright (C) <Year> <Copyright holder's name>. All rights reserved.
+ *   Author: <Author's name> <Contact e-mail>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,18 +37,44 @@
 #define __APPS_EXAMPLES_LVGLDEMO_DEMO_H
 
 /****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include <graphics/lvgl.h>
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#ifdef CONFIG_EXAMPLES_LVGLDEMO_WALLPAPER
+#  define LV_DEMO_WALLPAPER 1
+#else
+#  define LV_DEMO_WALLPAPER 0
+#endif
+
+/****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
 
 #ifdef __cplusplus
+#define EXTERN extern "C"
 extern "C"
 {
+#else
+#define EXTERN extern
 #endif
 
-void demo_init(void);
+#ifdef CONFIG_EXAMPLES_LVGLDEMO_SIMPLE
 
+/* Create a demo application */
+
+void demo_create(void);
+
+#endif
+
+#undef EXTERN
 #ifdef __cplusplus
-} /* extern "C" */
+}
 #endif
 
-#endif /*__APPS_EXAMPLES_LVGLDEMO_DEMO_H */
+#endif /* __APPS_EXAMPLES_LVGLDEMO_DEMO_H */
