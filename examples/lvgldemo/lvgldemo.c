@@ -1,7 +1,7 @@
 /****************************************************************************
  * examples/lvgdemo/lvgldemo.c
  *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -224,9 +224,9 @@ int lvgldemo_main(int argc, char *argv[])
 #else
 #  error "No theme selected for this application"
 #endif
-  
+
  lv_test_theme_1(theme);
- 
+
 #elif defined(CONFIG_EXAMPLES_LVGLDEMO_THEME_2)
   lv_test_theme_2();
 #else
