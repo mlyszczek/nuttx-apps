@@ -41,7 +41,7 @@ ASRCS =
 CSRCS =
 VPATH =
 
-LVGL_DIR = $(APPDIR)/graphics/littlevgl
+LVGL_DIR = .
 
 # LVGL Libraries
 

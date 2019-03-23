@@ -177,7 +177,7 @@ config USE_LV_GPU
 	default y
 
 config USE_LV_REAL_DRAW
-	bool "Enable function which draw directly to the frame buffer instead of VDB"
+	bool "Enable function which draws directly to the frame buffer instead of VDB"
 	default y
 
 config USE_LV_FILESYSTEM

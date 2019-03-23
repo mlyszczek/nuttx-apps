@@ -26,9 +26,11 @@ config EXAMPLES_LVGLDEMO_THEME_1
 
 config EXAMPLES_LVGLDEMO_THEME_2
 	bool "Multiple Themes"
+	select LV_THEME_LIVE_UPDATE
 	---help---
 		Switch themes on the fly to demonstrate each different
-		theme
+		themes. Configure multiple themes in the littlevgl
+		settings to use.
 
 endchoice
 
@@ -40,35 +42,35 @@ config EXAMPLES_LVGLDEMO_WALLPAPER
 choice
 	prompt "Selected Theme"
 	depends on EXAMPLES_LVGLDEMO_THEME_1
-	default EXAMPLES_LVGLDEMO_THEME_1_DEFAULT_THEME
+	default EXAMPLES_LVGLDEMO_THEME_1_DEFAULT
 
-config EXAMPLES_LVGLDEMO_THEME_1_DEFAULT_THEME
+config EXAMPLES_LVGLDEMO_THEME_1_DEFAULT
 	bool "Default Theme"
-	depends on USE_LV_THEME_DEFAULT
+	select USE_LV_THEME_DEFAULT
 
 config EXAMPLES_LVGLDEMO_THEME_1_ALIEN
 	bool "Alien"
-	depends on USE_LV_THEME_ALIEN
+	select USE_LV_THEME_ALIEN
 
 config EXAMPLES_LVGLDEMO_THEME_1_NIGHT
 	bool "Night"
-	depends on USE_LV_THEME_NIGHT
+	select USE_LV_THEME_NIGHT
 
 config EXAMPLES_LVGLDEMO_THEME_1_MONO
 	bool "Mono"
-	depends on USE_LV_THEME_MONO
+	select USE_LV_THEME_MONO
 
 config EXAMPLES_LVGLDEMO_THEME_1_MATERIAL
 	bool "Material"
-	depends on USE_LV_THEME_MATERIAL
+	select USE_LV_THEME_MATERIAL
 
 config EXAMPLES_LVGLDEMO_THEME_1_ZEN
 	bool "Zen"
-	depends on USE_LV_THEME_ZEN
+	select USE_LV_THEME_ZEN
 
 config EXAMPLES_LVGLDEMO_THEME_1_NEMO
 	bool "Nemo"
-	depends on USE_LV_THEME_NEMO
+	select USE_LV_THEME_NEMO
 
 endchoice
 
