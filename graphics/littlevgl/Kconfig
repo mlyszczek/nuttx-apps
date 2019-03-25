@@ -448,23 +448,23 @@ choice
 
 config LV_FONT_DEFAULT_DEJAVU_10
 	bool "Dejavu 10 px"
-	depends on USE_LV_FONT_DEJAVU_10 > 0
+	depends on USE_LV_FONT_DEJAVU_10 != 0
 
 config LV_FONT_DEFAULT_DEJAVU_20
 	bool "Dejavu 20 px"
-	depends on USE_LV_FONT_DEJAVU_20 > 0
+	depends on USE_LV_FONT_DEJAVU_20 != 0
 
 config LV_FONT_DEFAULT_DEJAVU_30
 	bool "Dejavu 30 px"
-	depends on USE_LV_FONT_DEJAVU_30 > 0
+	depends on USE_LV_FONT_DEJAVU_30 != 0
 
 config LV_FONT_DEFAULT_DEJAVU_40
 	bool "Dejavu 40 px"
-	depends on USE_LV_FONT_DEJAVU_40 > 0
+	depends on USE_LV_FONT_DEJAVU_40 != 0
 
 config LV_FONT_DEFAULT_MONOSPACE_8
 	bool "Monospace 8 px"
-	depends on USE_LV_FONT_MONOSPACE_8 > 0
+	depends on USE_LV_FONT_MONOSPACE_8 != 0
 
 endchoice
 
