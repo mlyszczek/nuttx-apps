@@ -4,6 +4,8 @@
  *   Copyright (C) 2019 Gábor Kiss-Vámosi. All rights reserved.
  *   Author: Gábor Kiss-Vámosi <kisvegabor@gmail.com>
  *
+ * Released under the following BSD-compatible MIT license:
+ *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
  * files (the “Software”), to deal in the Software without
@@ -544,6 +546,7 @@ static void tab_switcher(void *tv)
     {
       tab = 0;
     }
+
   lv_tabview_set_tab_act(tv, tab, true);
 }
 #endif
