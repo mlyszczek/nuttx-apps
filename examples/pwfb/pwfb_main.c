@@ -57,14 +57,16 @@
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
 
-#ifdef CONFIG_VNCSERVER
-#  include <nuttx/video/vnc.h>
-#endif
-
 #include <nuttx/nx/nx.h>
 #include <nuttx/nx/nxtk.h>
 #include <nuttx/nx/nxbe.h>
 #include <nuttx/nx/nxfonts.h>
+
+#ifdef CONFIG_NX_SWCURSOR
+#  undef  CONFIG_NXWIDGETS_BPP
+#  define CONFIG_NXWIDGETS_BPP CONFIG_EXAMPLES_PWFB_BPP
+#  include "cursor-arrow1-30x30.h"
+#endif
 
 #include "pwfb_internal.h"
 
@@ -72,9 +74,15 @@
  * Private Data
  ****************************************************************************/
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 0
 static const char g_wndomsg1[] = "NuttX is cool!";
+#endif
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 1
 static const char g_wndomsg2[] = "NuttX is fun!";
+#endif
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 2
 static const char g_wndomsg3[] = "NuttX is groovy!";
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -120,15 +128,22 @@ static bool pwfb_server_initialize(FAR struct pwfb_state_s *st)
 #ifdef CONFIG_VNCSERVER
       /* Setup the VNC server to support keyboard/mouse inputs */
 
-      ret = vnc_default_fbinitialize(0, st->hnx);
-      if (ret < 0)
-        {
-          printf("pwfb_server_initialize: ERROR: "
-                 "vnc_default_fbinitialize failed: %d\n",
-                 ret);
-          nx_disconnect(st->hnx);
-          return false;
-        }
+       struct boardioc_vncstart_s vnc =
+       {
+         0, st->hnx
+       };
+
+       ret = boardctl(BOARDIOC_VNC_START, (uintptr_t)&vnc);
+       if (ret < 0)
+         {
+           printf("pwfb_server_initialize: ERROR: "
+                  "boardctl(BOARDIOC_VNC_START) failed: %d\n",
+                  ret);
+
+           nx_disconnect(st->hnx);
+           g_exitcode = NXEXIT_FBINITIALIZE;
+           return ERROR;
+         }
 #endif
     }
   else
@@ -416,7 +431,7 @@ static bool pwfb_configure_window(FAR struct pwfb_state_s *st, int wndx,
    */
 
   /* Create a bounding box.  This is actually too large because it does not
-   * account for the boarder widths.  However, NX should clip the fill to
+   * account for the border widths.  However, NX should clip the fill to
    * stay within the frame.
    */
 
@@ -464,7 +479,10 @@ static bool pwfb_configure_window(FAR struct pwfb_state_s *st, int wndx,
         }
     }
 
-  /* Set up for motion */
+  /* Set up for motion.
+   * REVISIT:  The vertical limits, xmax andymax, seems to be off
+   * by about the height of the toolbar.
+   */
 
   wndo->xmax   = itob16(st->xres - size->w - 1);
   wndo->ymax   = itob16(st->yres - size->h - 1);
@@ -488,6 +506,66 @@ errout_with_hwnd:
 
   return false;
 }
+
+/****************************************************************************
+ * Name: pwfb_configure_cursor
+ ****************************************************************************/
+
+#ifdef CONFIG_NX_SWCURSOR
+static bool pwfb_configure_cursor(FAR struct pwfb_state_s *st,
+                                  FAR struct nxgl_point_s *pos,
+                                  double deltax, double deltay)
+{
+  int ret;
+
+  /* Initialize the data structure */
+
+  st->cursor.state     = PFWB_CURSOR_MOVING;
+  st->cursor.countdown = CURSOR_MOVING_DELAY;
+  st->cursor.blinktime = 0;
+  st->cursor.xmax      = itob16(st->xres - g_arrow1Cursor.size.w - 1);
+  st->cursor.ymax      = itob16(st->yres - g_arrow1Cursor.size.h - 1);
+  st->cursor.xpos      = itob16(pos->x);
+  st->cursor.ypos      = itob16(pos->y);
+  st->cursor.deltax    = dtob16(deltax);
+  st->cursor.deltay    = dtob16(deltay);
+
+  /* Set the cursor image */
+
+  ret = nxcursor_setimage(st->hnx, &g_arrow1Cursor);
+  if (ret < 0)
+    {
+      printf("pwfb_configure_cursor: ERROR: "
+             "nxcursor_setimage failed: %d\n",
+             errno);
+      return false;
+    }
+
+  /* Set the cursor position */
+
+  ret = nxcursor_setposition(st->hnx, pos);
+  if (ret < 0)
+    {
+      printf("pwfb_configure_cursor: ERROR: "
+             "nxcursor_setposition failed: %d\n",
+             errno);
+      return false;
+    }
+
+  /* Enable the cursor */
+
+  ret = nxcursor_enable(st->hnx, true);
+  if (ret < 0)
+    {
+      printf("pwfb_configure_cursor: ERROR: "
+             "nxcursor_enable failed: %d\n",
+             errno);
+      return false;
+    }
+
+  return true;
+}
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -553,6 +631,7 @@ int pwfb_main(int argc, char *argv[])
       goto errout_with_fontcache;
     }
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 0
   /* Open window 1 */
 
   printf("pwfb_main: Open window 1\n");
@@ -595,7 +674,9 @@ int pwfb_main(int argc, char *argv[])
              "pwfb_configure_window failed for window 1\n");
       goto errout_with_hwnd1;
     }
+#endif
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 1
   /* Open window 2 */
 
   printf("pwfb_main: Open window 2\n");
@@ -623,7 +704,9 @@ int pwfb_main(int argc, char *argv[])
              "pwfb_configure_window failed for window 2\n");
       goto errout_with_hwnd2;
     }
+#endif
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 2
   /* Open window 3 */
 
   printf("pwfb_main: Open window 3\n");
@@ -651,6 +734,21 @@ int pwfb_main(int argc, char *argv[])
              "pwfb_configure_window failed for window 2\n");
       goto errout_with_hwnd3;
     }
+#endif
+
+#ifdef CONFIG_NX_SWCURSOR
+  /* Configure the software cursor */
+
+  pos.x = wstate.xres / 2;
+  pos.y = wstate.yres / 2;
+
+  if (!pwfb_configure_cursor(&wstate, &pos, 2.900, -5.253))
+    {
+      printf("pwfb_main: ERROR: "
+             "pwfb_configure_cursor failed for window 2\n");
+      goto errout_with_hwnds;
+    }
+#endif
 
   /* Now loop animating the windows */
 
@@ -661,12 +759,22 @@ int pwfb_main(int argc, char *argv[])
         {
           printf("pwfb_main: ERROR:"
                  "pwfb_motion failed\n");
-          goto errout_with_hwnd3;
+          goto errout_with_cursor;
         }
     }
 
   errcode = EXIT_SUCCESS;
 
+errout_with_cursor:
+#ifdef CONFIG_NX_SWCURSOR
+  /* Disable the cursor */
+
+  (void)nxcursor_enable(wstate.hnx, false);
+
+errout_with_hwnds:
+#endif
+
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 2
   /* Close window 3 */
 
 errout_with_hwnd3:
@@ -677,7 +785,9 @@ errout_with_hwnd3:
     {
       printf("pwfb_main: ERROR: nxtk_closewindow failed: %d\n", errno);
     }
+#endif
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 1
   /* Close window 2 */
 
 errout_with_hwnd2:
@@ -688,9 +798,11 @@ errout_with_hwnd2:
     {
       printf("pwfb_main: ERROR: nxtk_closewindow failed: %d\n", errno);
     }
+#endif
 
   /* Close window1 */
 
+#if CONFIG_EXAMPLES_PWFB_NWINDOWS > 0
 errout_with_hwnd1:
   printf("pwfb_main: Close window #1\n");
 
@@ -699,6 +811,7 @@ errout_with_hwnd1:
     {
       printf("pwfb_main: ERROR: nxtk_closewindow failed: %d\n", errno);
     }
+#endif
 
 errout_with_fontcache:
   /* Release the font cache */
