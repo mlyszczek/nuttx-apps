@@ -240,6 +240,17 @@ namespace NXWidgets
     bool lower(void);
 
     /**
+     * May be used to either (1) raise a window to the top of the display and
+     * select modal behavior, or (2) disable modal behavior.
+     *
+     * @param enable True: enter modal state; False: leave modal state
+     * @return True on success, false on any failure.
+     */
+
+    bool modal(bool enable);
+
+#ifdef CONFIG_NXTERM_NXKBDIN
+    /**
      * Each window implementation also inherits from CCallback.  CCallback,
      * by default, forwards NX keyboard input to the various widgets residing
      * in the window. But NxTerm is a different usage model; In this case,
@@ -253,7 +264,6 @@ namespace NXWidgets
      *    directed to the widgets within the window.
      */
 
-#ifdef CONFIG_NXTERM_NXKBDIN
     inline void redirectNxTerm(NXTERM handle)
     {
       setNxTerm(handle);
@@ -376,4 +386,3 @@ namespace NXWidgets
 #endif // __cplusplus
 
 #endif // __APPS_INCLUDE_GRAPHICS_NXWIDGETS_CNXTKWINDOW_HXX
-

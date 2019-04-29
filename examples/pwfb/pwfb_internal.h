@@ -60,19 +60,28 @@
 /* Required NX Server Settings */
 
 #ifndef CONFIG_NX
-#  error "NX is not enabled (CONFIG_NX)"
+#  error NX is not enabled (CONFIG_NX)
 #endif
 
 #ifdef CONFIG_DISABLE_MQUEUE
-#  error "The multi-threaded example requires MQ support (CONFIG_DISABLE_MQUEUE=n)"
+#  error The multi-threaded example requires MQ support (CONFIG_DISABLE_MQUEUE=n)
 #endif
 
 #ifdef CONFIG_DISABLE_PTHREAD
-#  error "This example requires pthread support (CONFIG_DISABLE_PTHREAD=n)"
+#  error This example requires pthread support (CONFIG_DISABLE_PTHREAD=n)
 #endif
 
 #ifndef CONFIG_NX_BLOCKING
-#  error "This example depends on CONFIG_NX_BLOCKING"
+#  error This example depends on CONFIG_NX_BLOCKING
+#endif
+
+/* WARNING:  Verbose graphics debug output interferes with this test because
+ * it introduces some weird timing.  The test probably should use
+ * nx_synchronize() to keep syncrhonization even with the added delays.
+ */
+
+#ifdef CONFIG_DEBUG_GRAPHICS_INFO
+#  warning Verbose graphics debug output interferes with this test.
 #endif
 
 /* Task priorities */
@@ -148,6 +157,20 @@
 #  endif
 #endif
 
+/* Cursor timing */
+
+#if CONFIG_EXAMPLES_PWFB_RATECONTROL > 0
+#  define CURSOR_MOVING_DELAY     (3000 / CONFIG_EXAMPLES_PWFB_RATECONTROL)
+#  define CURSOR_STATIONARY_DELAY (2000 / CONFIG_EXAMPLES_PWFB_RATECONTROL)
+#  define CURSOR_BLINKING_DELAY   (5000 / CONFIG_EXAMPLES_PWFB_RATECONTROL)
+#  define CURSOR_BLINK_DELAY      ( 500 / CONFIG_EXAMPLES_PWFB_RATECONTROL)
+#else
+#  define CURSOR_MOVING_DELAY     (0)
+#  define CURSOR_STATIONARY_DELAY (0)
+#  define CURSOR_BLINKING_DELAY   (0)
+#  define CURSOR_BLINK_DELAY      (0)
+#endif
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -167,6 +190,37 @@ struct pwfb_window_s
   b16_t deltay;                            /* Current Y speed */
 };
 
+#ifdef CONFIG_NX_SWCURSOR
+/* We will run the cursor in 3 different states:
+ *
+ * 1. Moving
+ * 2. Stationary
+ * 3. Enabling/disabling
+ */
+
+enum pfwb_cursor_state_s
+{
+  PFWB_CURSOR_MOVING = 0,
+  PFWB_CURSOR_STATIONARY,
+  PFWB_CURSOR_BLINKING
+};
+
+/* Describes the unique state of the cursor */
+
+struct pwfb_cursor_s
+{
+  enum pfwb_cursor_state_s state;          /* Current cursor state */
+  bool visible;                            /* True:  The cursor is visible */
+  int countdown;                           /* Countdown until next state */
+  int blinktime;                           /* Time remaining enabled/disabled */
+  b16_t xmax;                              /* Max X position */
+  b16_t ymax;                              /* Max Y position */
+  b16_t xpos;                              /* Current X position */
+  b16_t ypos;                              /* Current Y position */
+  b16_t deltax;                            /* Current X speed */
+  b16_t deltay;                            /* Current Y speed */
+};
+#endif
 /* Describes the overall state of the example */
 
 struct pwfb_state_s
@@ -197,9 +251,15 @@ struct pwfb_state_s
   uint8_t fwidth;                          /* Max width of a font in pixels */
   uint8_t spwidth;                         /* The width of a space */
 
+#ifdef CONFIG_NX_SWCURSOR
+  /* Cursor-specific state */
+
+  struct pwfb_cursor_s cursor;
+#endif
+
   /* Window-specific state */
 
-  struct pwfb_window_s wndo[3];
+  struct pwfb_window_s wndo[CONFIG_EXAMPLES_PWFB_NWINDOWS];
 };
 
 /****************************************************************************

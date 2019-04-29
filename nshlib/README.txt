@@ -1203,7 +1203,7 @@ o telnetd
 
   Normally this command would be suppressed with CONFIG_NSH_DISABLE_TELNETD
   because the Telnet daemon is automatically started in nsh_main.c.  The
-  exception is when CONFIG_NSH_NETLOCAL is selected.  IN that case, the
+  exception is when CONFIG_NETINIT_NETLOCAL is selected.  IN that case, the
   network is not enabled at initialization but rather must be enabled from
   the NSH command line or via other applications.
 
@@ -1441,7 +1441,7 @@ Command Dependencies on Configuration Settings
   ifup       CONFIG_NET && CONFIG_FS_PROCFS && !CONFIG_FS_PROCFS_EXCLUDE_NET
   insmod     CONFIG_MODULE
   irqinfo    CONFIG_FS_PROCFS && CONFIG_SCHED_IRQMONITOR
-  kill       !CONFIG_DISABLE_SIGNALS
+  kill       --
   losetup    !CONFIG_DISABLE_MOUNTPOINT && CONFIG_DEV_LOOP
   ln         CONFIG_PSEUDOFS_SOFTLINK
   ls         --
@@ -1472,7 +1472,7 @@ Command Dependencies on Configuration Settings
   set        CONFIG_NSH_VARS || !CONFIG_DISABLE_ENVIRON
   sh         CONFIG_NFILE_STREAMS > 0 && !CONFIG_NSH_DISABLESCRIPT
   shutdown   CONFIG_BOARDCTL_POWEROFF || CONFIG_BOARDCTL_RESET
-  sleep      !CONFIG_DISABLE_SIGNALS
+  sleep      --
   test       !CONFIG_NSH_DISABLESCRIPT
   telnetd    CONFIG_NSH_TELNET && !CONFIG_NSH_DISABLE_TELNETD
   time       ---
@@ -1484,7 +1484,7 @@ Command Dependencies on Configuration Settings
   urlencode  CONFIG_NETUTILS_CODECS && CONFIG_CODECS_URLCODE
   useradd    !CONFIG_DISABLE_MOUNTPOINT && CONFIG_FS_WRITABLE && CONFIG_NSH_LOGIN_PASSWD
   userdel    !CONFIG_DISABLE_MOUNTPOINT && CONFIG_FS_WRITABLE && CONFIG_NSH_LOGIN_PASSWD
-  usleep     !CONFIG_DISABLE_SIGNALS
+  usleep     --
   get        CONFIG_NET && CONFIG_NET_TCP
   xd         ---
 
@@ -1536,9 +1536,9 @@ All built-in applications require that support for NSH built-in applications has
   Application Depends on Configuration
   ----------- --------------------------
   ping        CONFIG_NET && CONFIG_NET_ICMP && CONFIG_NET_ICMP_SOCKET &&
-              CONFIG_SYSTEM_PING && !CONFIG_DISABLE_POLL && !CONFIG_DISABLE_SIGNALS
+              CONFIG_SYSTEM_PING && !CONFIG_DISABLE_POLL
   ping6       CONFIG_NET && CONFIG_NET_ICMPv6 && CONFIG_NET_ICMPv6_SOCKET &&
-              CONFIG_SYSTEM_PING6 && !CONFIG_DISABLE_POLL && !CONFIG_DISABLE_SIGNALS
+              CONFIG_SYSTEM_PING6 && !CONFIG_DISABLE_POLL
 
 NSH-Specific Configuration Settings
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1836,20 +1836,20 @@ NSH-Specific Configuration Settings
       Determines the size of the I/O buffer to use for sending/
       receiving TELNET commands/reponses
 
-  * CONFIG_NSH_DHCPC
+  * CONFIG_NETINIT_DHCPC
       Obtain the IP address via DHCP.
 
-  * CONFIG_NSH_IPADDR
-      If CONFIG_NSH_DHCPC is NOT set, then the static IP
+  * CONFIG_NETINIT_IPADDR
+      If CONFIG_NETINIT_DHCPC is NOT set, then the static IP
       address must be provided.
 
-  * CONFIG_NSH_DRIPADDR
+  * CONFIG_NETINIT_DRIPADDR
       Default router IP address
 
-  * CONFIG_NSH_NETMASK
+  * CONFIG_NETINIT_NETMASK
       Network mask
 
-  * CONFIG_NSH_NOMAC
+  * CONFIG_NETINIT_NOMAC
       Set if your ethernet hardware has no built-in MAC address.
       If set, a bogus MAC will be assigned.
 
