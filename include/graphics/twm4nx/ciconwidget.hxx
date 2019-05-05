@@ -89,7 +89,6 @@ namespace Twm4Nx
       FAR CTwm4Nx                   *m_twm4nx;         /**< Cached Twm4Nx session */
       mqd_t                          m_eventq;         /**< NxWidget event message queue */
       FAR NXWidgets::CWidgetControl *m_widgetControl;  /**< The controlling widget */
-      FAR NXWidgets::CWidgetStyle   *m_style;          /**< Widget style */
 
       // Dragging
 
@@ -187,15 +186,6 @@ namespace Twm4Nx
        */
 
       bool iconUngrab(FAR struct SEventMsg *eventmsg);
-
-      /**
-       * Draw the area of this widget that falls within the clipping region.
-       * Called by the redraw() function to draw all visible regions.
-       * @param port The NXWidgets::CGraphicsPort to draw to.
-       * @see redraw()
-       */
-
-      void drawContents(NXWidgets::CGraphicsPort* port);
 
       /**
        * Copy constructor is protected to prevent usage.

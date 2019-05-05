@@ -220,6 +220,7 @@ void CWidgetControl::postWindowEvent(void)
  *         {
  *           window->waitWindowEvent();
  *         }
+ *
  *       sched_unlock();
  *     }
  *
@@ -427,16 +428,13 @@ void CWidgetControl::geometryEvent(NXHANDLE hWindow,
  * in particular, will occur when the a portion of the window that was
  * previously obscured is now exposed.
  *
- * @param rect The region in the window that must be redrawn.
+ * @param nxRect The region in the window that must be redrawn.
  * @param more True means that more re-draw requests will follow
  */
 
 void CWidgetControl::redrawEvent(FAR const struct nxgl_rect_s *nxRect, bool more)
 {
-  // REVISIT.  This is not not yet used and not fully implemented.
-  CRect rect;
-  rect.setNxRect(nxRect);
-  m_eventHandlers.raiseRedrawEvent();
+  m_eventHandlers.raiseRedrawEvent(nxRect, more);
 }
 
 /**
@@ -572,9 +570,9 @@ void CWidgetControl::newMouseEvent(FAR const struct nxgl_point_s *pos, uint8_t b
 
   m_eventHandlers.raiseMouseEvent();
 
+#ifdef CONFIG_NXWIDGET_EVENTWAIT
   // Then wake up logic that may be waiting for a window event
 
-#ifdef CONFIG_NXWIDGET_EVENTWAIT
   postWindowEvent();
 #endif
 }
@@ -607,9 +605,9 @@ void CWidgetControl::newKeyboardEvent(uint8_t nCh, FAR const uint8_t *pStr)
 
   m_eventHandlers.raiseKeyboardEvent();
 
+#ifdef CONFIG_NXWIDGET_EVENTWAIT
   // Then wake up logic that may be waiting for a window event
 
-#ifdef CONFIG_NXWIDGET_EVENTWAIT
   postWindowEvent();
 #endif
 }
@@ -908,7 +906,7 @@ bool CWidgetControl::pollCursorControlEvents(void)
 
 void CWidgetControl::takeGeoSem(void)
 {
-  // Take the geometry semaphore.  Retry is an error occurs (only if
+  // Take the geometry semaphore.  Retry if an error occurs (only if
   // the error is due to a signal interruption).
 
   int ret;
@@ -917,6 +915,41 @@ void CWidgetControl::takeGeoSem(void)
       ret = sem_wait(&m_geoSem);
     }
   while (ret < 0 && errno == EINTR);
+}
+
+/**
+ * Check if geomtry data is available.  If not, [re-]request the
+ * geomtry data and wait for it to become valid.
+ *
+ * CAREFUL:  This assumes that if we already have geometry data, then
+ * it is valid.  This might not be true if the size position was
+ * recently changed.
+ *
+ * REVISIT:  Ideally m_haveGeometry would be set false an any calls to
+ * reposition or resize the window.
+ */
+
+void CWidgetControl::waitGeoData(void)
+{
+  // Check if we already have geometry data available.
+
+  while (!m_haveGeometry)
+    {
+      // No.. it is probably on its way, but to avoid any possibility
+      // of a deadlock wait, request the position data again.
+
+      int ret = nx_getposition(m_hWindow);
+      if (ret < 0)
+        {
+          gerr("ERROR: nx_getposition failed: %d\n", errno);
+        }
+
+      takeGeoSem();
+    }
+
+  // Put the semaphore count back to 1 for the next guy
+
+  giveGeoSem();
 }
 
 /**

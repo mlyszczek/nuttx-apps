@@ -53,10 +53,6 @@
 #include "graphics/nxwidgets/inxwindow.hxx"
 
 /****************************************************************************
- * Pre-Processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
  * Implementation Classes
  ****************************************************************************/
 
@@ -89,6 +85,7 @@ namespace NXWidgets
     NXHANDLE        m_hNxServer;     /**< Handle to the NX server. */
     NXWINDOW        m_hNxWindow;     /**< Handle to the NX raw window */
     CWidgetControl *m_widgetControl; /**< The controlling widget for the window */
+    uint8_t         m_flags;         /**< Window properties */
 
   public:
 
@@ -111,9 +108,11 @@ namespace NXWidgets
      *
      * @param hNxServer Handle to the NX server.
      * @param widgetControl Controlling widget for this window.
+     * @param flags Window properties
      */
 
-    CNxWindow(NXHANDLE hNxServer, CWidgetControl *pWidgetControl);
+    CNxWindow(NXHANDLE hNxServer, CWidgetControl *pWidgetControl,
+              uint8_t flags = 0);
 
     /**
      * Destructor.
@@ -202,7 +201,10 @@ namespace NXWidgets
      * @return True on success, false on any failure.
      */
 
-    bool raise(void);
+    inline bool raise(void)
+    {
+      return nx_raise(m_hNxWindow) == OK;
+    }
 
     /**
      * Lower the window to the bottom of the display.
@@ -210,7 +212,32 @@ namespace NXWidgets
      * @return True on success, false on any failure.
      */
 
-    bool lower(void);
+    inline bool lower(void)
+    {
+      return nx_lower(m_hNxWindow) == OK;
+    }
+
+    /**
+     * Show a hidden window
+     *
+     * @return True on success, false on any failure.
+     */
+
+    inline bool show(void)
+    {
+      return nx_setvisibility(m_hNxWindow, false) == OK;
+    }
+
+    /**
+     * Hide a visible window
+     *
+     * @return True on success, false on any failure.
+     */
+
+    inline bool hide(void)
+    {
+      return nx_setvisibility(m_hNxWindow, true) == OK;
+    }
 
     /**
      * May be used to either (1) raise a window to the top of the display and

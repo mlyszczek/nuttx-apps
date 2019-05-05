@@ -52,14 +52,15 @@
 #include <cassert>
 #include <cerrno>
 #include <fcntl.h>
-#include <debug.h>
 
 #include <nuttx/version.h>
+#include <nuttx/nx/nxbe.h>
 
 #include "graphics/nxwidgets/cnxfont.hxx"
 #include "graphics/nxwidgets/clistbox.hxx"
 #include "graphics/nxwidgets/cwidgeteventargs.hxx"
 
+#include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/ctwm4nx.hxx"
 #include "graphics/twm4nx/cmenus.hxx"
 #include "graphics/twm4nx/cresize.hxx"
@@ -132,8 +133,8 @@ bool CMenus::initialize(FAR const char *name)
   m_eventq = mq_open(mqname, O_WRONLY | O_NONBLOCK);
   if (m_eventq == (mqd_t)-1)
     {
-      gerr("ERROR: Failed open message queue '%s': %d\n",
-           mqname, errno);
+      twmerr("ERROR: Failed open message queue '%s': %d\n",
+             mqname, errno);
       return false;
     }
 
@@ -149,7 +150,7 @@ bool CMenus::initialize(FAR const char *name)
 
   if (!createMenuWindow())
     {
-      gerr("ERROR: Failed to create menu window\n");
+      twmerr("ERROR: Failed to create menu window\n");
       cleanup();
       return false;
     }
@@ -158,7 +159,7 @@ bool CMenus::initialize(FAR const char *name)
 
   if (!createMenuListBox())
     {
-      gerr("ERROR: Failed to create menu list box\n");
+      twmerr("ERROR: Failed to create menu list box\n");
       cleanup();
       return false;
     }
@@ -179,8 +180,8 @@ bool CMenus::initialize(FAR const char *name)
 bool CMenus::addMenuItem(FAR const char *text, FAR CMenus *subMenu,
                          FAR CTwm4NxEvent *handler, uint16_t event)
 {
-  ginfo("Adding menu text=\"%s\", subMenu=%p, event=%04x\n",
-        text, subMenu, event);
+  twminfo("Adding menu text=\"%s\", subMenu=%p, event=%04x\n",
+          text, subMenu, event);
 
   // Allocate a new menu item entry
 
@@ -188,7 +189,7 @@ bool CMenus::addMenuItem(FAR const char *text, FAR CMenus *subMenu,
 
   if (item == (FAR struct SMenuItem *)0)
   {
-      gerr("ERROR:  Failed to allocate menu item\n");
+      twmerr("ERROR:  Failed to allocate menu item\n");
       return false;
   }
 
@@ -197,7 +198,7 @@ bool CMenus::addMenuItem(FAR const char *text, FAR CMenus *subMenu,
   item->text = std::strdup(text);
   if (item->text == (FAR char *)0)
     {
-      gerr("ERROR:  strdup of item text failed\n");
+      twmerr("ERROR:  strdup of item text failed\n");
       std::free(item);
       return false;
     }
@@ -339,7 +340,7 @@ bool CMenus::event(FAR struct SEventMsg *eventmsg)
                              sizeof(struct SEventMsg), 100);
               if (ret < 0)
                 {
-                  gerr("ERROR: mq_send failed: %d\n", ret);
+                  twmerr("ERROR: mq_send failed: %d\n", ret);
                   success = false;
                 }
             }
@@ -483,11 +484,11 @@ bool CMenus::createMenuWindow(void)
   // 3. Create a Widget control instance for the window using the default
   //    style for now.  CWindowEvent derives from CWidgetControl.
 
-  FAR CWindowEvent *control = new CWindowEvent(m_twm4nx);
+  FAR CWindowEvent *control = new CWindowEvent(m_twm4nx, (FAR void *)this);
 
   // 4. Create the menu window
 
-  m_menuWindow = m_twm4nx->createFramedWindow(control);
+  m_menuWindow = m_twm4nx->createFramedWindow(control, NXBE_WINDOW_RAMBACKED);
   if (m_menuWindow == (FAR NXWidgets::CNxTkWindow *)0)
     {
       delete control;
@@ -598,7 +599,7 @@ bool CMenus::setMenuWindowSize(void)
 
   if (!m_menuWindow->setSize(&menuSize))
     {
-      gerr("ERROR: Failed to set window size\n");
+      twmerr("ERROR: Failed to set window size\n");
       return false;
     }
 
@@ -653,7 +654,7 @@ bool CMenus::createMenuListBox(void)
                                           size.w, size.h);
   if (m_menuListBox == (FAR NXWidgets::CListBox *)0)
     {
-      gerr("ERROR: Failed to instantiate list box\n");
+      twmerr("ERROR: Failed to instantiate list box\n");
       return false;
     }
 
@@ -698,13 +699,13 @@ bool CMenus::popUpMenu(FAR struct nxgl_point_s *pos)
   m_popUpMenu = new CMenus(m_twm4nx);
   if (m_popUpMenu == (FAR CMenus *)0)
     {
-      gerr("ERROR: Failed to create popup menu.\n");
+      twmerr("ERROR: Failed to create popup menu.\n");
       return false;
     }
 
   if (!m_popUpMenu->initialize(m_activeItem->text))
     {
-      gerr("ERROR: Failed to intialize popup menu.\n");
+      twmerr("ERROR: Failed to intialize popup menu.\n");
       delete m_popUpMenu;
       m_popUpMenu = (FAR CMenus *)0;
       return false;
@@ -730,7 +731,7 @@ bool CMenus::popUpMenu(FAR struct nxgl_point_s *pos)
 
       if (windowNames == (FAR CWindow **)0)
         {
-          gerr("ERROR: Failed to allocat window name\n");
+          twmerr("ERROR: Failed to allocat window name\n");
           return false;
         }
 
@@ -879,14 +880,14 @@ void CMenus::handleValueChangeEvent(const NXWidgets::CWidgetEventArgs &e)
                                 sizeof(struct SEventMsg), 100);
               if (ret < 0)
                 {
-                  gerr("ERROR: mq_send failed: %d\n", ret);
+                  twmerr("ERROR: mq_send failed: %d\n", ret);
                 }
 
               break;
             }
         }
 
-      gwarn("WARNING:  No matching menu item\n");
+      twmwarn("WARNING:  No matching menu item\n");
     }
 }
 

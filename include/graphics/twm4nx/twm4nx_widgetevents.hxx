@@ -53,7 +53,8 @@
 // Preprocessor Definitions
 /////////////////////////////////////////////////////////////////////////////
 
-#define MAX_EVENT_PAYLOAD (64 - sizeof(uint16_t))
+#define MAX_EVENT_MSGSIZE sizeof(struct SEventMsg)
+#define MAX_EVENT_PAYLOAD (MAX_EVENT_MSGSIZE - sizeof(uint16_t))
 
 /////////////////////////////////////////////////////////////////////////////
 // WidgetEvent
@@ -68,7 +69,7 @@ namespace Twm4Nx
 {
   class CWindow;      // Forward reference
   class CWindowEvent; // Forward reference
-  class CTwm4NxEvent;  // Forward reference
+  class CTwm4NxEvent; // Forward reference
   class CTwm4Nx;      // Forward reference
 
   ///////////////////////////////////////////////////////////////////////////
@@ -81,8 +82,8 @@ namespace Twm4Nx
 
   enum EEventRecipient
   {
-    EVENT_RECIPIENT_MSG        = 0x0000,  /**< Twm4Nx messenging event */
-    EVENT_RECIPIENT_SYSTEM     = 0x1000,  /**< Twm4Nx system event */
+    EVENT_RECIPIENT_SYSTEM     = 0x0000,  /**< Twm4Nx system event */
+    EVENT_RECIPIENT_BACKGROUND = 0x1000,  /**< Background window event */
     EVENT_RECIPIENT_ICONWIDGET = 0x2000,  /**< Icon Widget event */
     EVENT_RECIPIENT_ICONMGR    = 0x3000,  /**< Icon Manager event */
     EVENT_RECIPIENT_MENU       = 0x4000,  /**< Menu related event */
@@ -100,15 +101,16 @@ namespace Twm4Nx
 
   enum EEventID
   {
-    // Recipient == MSG
-
-    EVENT_MSG_POLL             = 0x0000,  /**< Poll widgets for events */
-
     // Recipient == SYSTEM
 
-    EVENT_SYSTEM_NOP           = 0x1000,  /**< Null event */
-    EVENT_SYSTEM_ERROR         = 0x1001,  /**< Report system error */
-    EVENT_SYSTEM_EXIT          = 0x1002,  /**< Terminate the Twm4Nx session */
+    EVENT_SYSTEM_NOP           = 0x0000,  /**< Null event */
+    EVENT_SYSTEM_ERROR         = 0x0001,  /**< Report system error */
+    EVENT_SYSTEM_EXIT          = 0x0002,  /**< Terminate the Twm4Nx session */
+
+    // Recipient == BACKGOUND
+
+    EVENT_BACKGROUND_POLL      = 0x1000,  /**< Poll background icons for events */
+    EVENT_BACKGROUND_REDRAW    = 0x1001,  /**< Redraw the background */
 
     // Recipient == ICONWIDGET
 
@@ -120,23 +122,24 @@ namespace Twm4Nx
 
     // Recipient == MENU
 
-    EVENT_MENU_IDENTIFY        = 0x4001,  /**< Describe the window */
-    EVENT_MENU_VERSION         = 0x4002,  /**< Show the Twm4Nx version */
-    EVENT_MENU_ICONIFY         = 0x4003,  /**< Tool bar minimize button pressed */
-    EVENT_MENU_DEICONIFY       = 0x4004,  /**< Window icon pressed */
-    EVENT_MENU_FUNCTION        = 0x4005,  /**< Perform function on unknown menu */
-    EVENT_MENU_TITLE           = 0x4006,  /**< REVISIT: Really an action not an event */
-    EVENT_MENU_ROOT            = 0x4007,  /**< REVISIT: Popup root menu */
+    EVENT_MENU_IDENTIFY        = 0x4000,  /**< Describe the window */
+    EVENT_MENU_VERSION         = 0x4001,  /**< Show the Twm4Nx version */
+    EVENT_MENU_ICONIFY         = 0x4002,  /**< Tool bar minimize button pressed */
+    EVENT_MENU_DEICONIFY       = 0x4003,  /**< Window icon pressed */
+    EVENT_MENU_FUNCTION        = 0x4004,  /**< Perform function on unknown menu */
+    EVENT_MENU_TITLE           = 0x4005,  /**< REVISIT: Really an action not an event */
+    EVENT_MENU_ROOT            = 0x4006,  /**< REVISIT: Popup root menu */
 
     // Recipient == WINDOW
 
-    EVENT_WINDOW_FOCUS         = 0x5000,  /**< Enter modal state */
-    EVENT_WINDOW_UNFOCUS       = 0x5001,  /**< Exit modal state */
-    EVENT_WINDOW_RAISE         = 0x5002,  /**< Raise window to the top of the heirarchy */
-    EVENT_WINDOW_LOWER         = 0x5003,  /**< Lower window to the bottom of the heirarchy */
-    EVENT_WINDOW_DEICONIFY     = 0x5004,  /**< De-iconify and raise window  */
-    EVENT_WINDOW_DRAG          = 0x5005,  /**< Drag window */
-    EVENT_WINDOW_DELETE        = 0x5006,  /**< Delete window */
+    EVENT_WINDOW_POLL          = 0x5000,  /**< Poll window for widget events */
+    EVENT_WINDOW_FOCUS         = 0x5001,  /**< Enter modal state */
+    EVENT_WINDOW_UNFOCUS       = 0x5002,  /**< Exit modal state */
+    EVENT_WINDOW_RAISE         = 0x5003,  /**< Raise window to the top of the heirarchy */
+    EVENT_WINDOW_LOWER         = 0x5004,  /**< Lower window to the bottom of the heirarchy */
+    EVENT_WINDOW_DEICONIFY     = 0x5005,  /**< De-iconify and raise window  */
+    EVENT_WINDOW_DRAG          = 0x5006,  /**< Drag window */
+    EVENT_WINDOW_DELETE        = 0x5007,  /**< Delete window */
 
     // Recipient == TOOLBAR
 
@@ -196,15 +199,26 @@ namespace Twm4Nx
   };
 
   /**
+   * This is the alternative form of the message used with redraw commands
+   */
+
+  struct SRedrawEventMsg
+  {
+    uint16_t eventID;                   /**< Encoded event ID */
+    struct nxgl_rect_s rect;            /**< Region to be redrawn */
+    bool more;                          /**< True: More redraw requests will follow */
+  };
+
+  /**
    * This is the alternative form of the message used on in
    * CWindowEvent::event()
    */
 
   struct SNxEventMsg
   {
-    uint16_t eventID;                  /**< Encoded event ID */
-    FAR CWindowEvent *instance;        /**< X/Y position */
-    FAR struct SWindow *win;           /**< Twm4NX window reference */
+    uint16_t eventID;                   /**< Encoded event ID */
+    FAR CWindowEvent *instance;         /**< X/Y position */
+    FAR void *obj;                      /**< Context specific reference */
   };
 }
 

@@ -45,7 +45,9 @@
 
 #include <semaphore.h>
 #include <pthread.h>
+#include <fixedmath.h>
 
+#include <nuttx/nx/nxglib.h>
 #include <nuttx/input/mouse.h>
 
 #include "graphics/nxwidgets/cnxserver.hxx"
@@ -57,6 +59,40 @@
 namespace Twm4Nx
 {
   class CTwm4Nx;    // Forward reference
+
+#ifdef CONFIG_TWM4NX_TOUCHSCREEN
+  /**
+   * Touchscreen calibration data
+   */
+
+#ifdef CONFIG_TWM4NX_TOUCHSCREEN_ANISOTROPIC
+  struct SCalibrationLine
+  {
+    float slope;                     /**< The slope of a line */
+    float offset;                    /**< The offset of a line */
+  };
+
+  struct SCalibrationData
+  {
+    struct SCalibrationLine left;    /**< Describes Y values along left edge */
+    struct SCalibrationLine right;   /**< Describes Y values along right edge */
+    struct SCalibrationLine top;     /**< Describes X values along top */
+    struct SCalibrationLine bottom;  /**< Describes X values along bottom edge */
+    nxgl_coord_t leftX;              /**< Left X value used in calibration */
+    nxgl_coord_t rightX;             /**< Right X value used in calibration */
+    nxgl_coord_t topY;               /**< Top Y value used in calibration */
+    nxgl_coord_t bottomY;            /**< Bottom Y value used in calibration */
+  };
+#else
+  struct SCalibrationData
+  {
+    b16_t xSlope;                    /**< X conversion: xSlope*(x) + xOffset */
+    b16_t xOffset;
+    b16_t ySlope;                    /**< Y conversion: ySlope*(y) + yOffset */
+    b16_t yOffset;
+  };
+#endif
+#endif // CONFIG_TWM4NX_TOUCHSCREEN
 
   /**
    * The CInput class provides receives raw keyboard and mouse inputs and
@@ -89,12 +125,22 @@ namespace Twm4Nx
        */
 
       CTwm4Nx                     *m_twm4nx;  /**< The Twm4Nx session */
+#ifndef CONFIG_TWM4NX_NOKEYBOARD
       int                          m_kbdFd;   /**< File descriptor of the opened keyboard device */
+#endif
+#ifndef CONFIG_TWM4NX_NOMOUSE
       int                          m_mouseFd; /**< File descriptor of the opened mouse device */
+#endif
       pthread_t                    m_thread;  /**< The listener thread ID */
       volatile enum EListenerState m_state;   /**< The state of the listener thread */
       sem_t                        m_waitSem; /**< Used to synchronize with the listener thread */
 
+#ifdef CONFIG_TWM4NX_TOUCHSCREEN
+      bool                         m_calib;   /**< False:  Use raw, uncalibrated touches */
+      struct SCalibrationData      m_calData; /**< Touchscreen calibration data */
+#endif
+
+#ifndef CONFIG_TWM4NX_NOKEYBOARD
       /**
        * Open the keyboard device.  Not very interesting for the case of
        * standard device but much more interesting for a USB keyboard device
@@ -110,9 +156,11 @@ namespace Twm4Nx
        */
 
       inline int keyboardOpen(void);
+#endif
 
+#ifndef CONFIG_TWM4NX_NOMOUSE
      /**
-       * Open the mouse input devices.  Not very interesting for the
+       * Open the mouse/touchscreen input device.  Not very interesting for the
        * case of standard character device but much more interesting for
        * USB mouse devices that may disappear when disconnected but later
        * reappear when reconnected.  In this case, this function will
@@ -126,7 +174,9 @@ namespace Twm4Nx
        */
 
       inline int mouseOpen(void);
+#endif
 
+#ifndef CONFIG_TWM4NX_NOKEYBOARD
       /**
        * Read data from the keyboard device and inject the keyboard data
        * into NX for proper distribution.
@@ -136,16 +186,34 @@ namespace Twm4Nx
        */
 
       inline int keyboardInput(void);
+#endif
+
+#ifndef CONFIG_TWM4NX_NOMOUSE
+#ifdef CONFIG_TWM4NX_TOUCHSCREEN
+      /**
+       * Calibrate raw touchscreen input.
+       *
+       * @param raw The raw touch sample
+       * @param scaled The location to return the scaled touch position
+       * @return On success, this method returns zero (OK).  A negated errno
+       *   value is returned if an irrecoverable error occurs.
+       */
+
+      int scaleTouchData(FAR const struct touch_point_s &raw,
+                         FAR struct nxgl_point_s &scaled);
+#endif
 
       /**
-       * Read data from the mouse device, update the cursor position, and
+       * Read data from the mouse/touchscreen device.  If the input device
+       * is a mouse, then update the cursor position.  And, in either case,
        * inject the mouse data into NX for proper distribution.
        *
-       * @return On success, then method returns a valid file descriptor.  A
-       *    negated errno value is returned if an irrecoverable error occurs.
+       * @return On success, this method returns zero (OK).  A negated errno
+       *   value is returned if an irrecoverable error occurs.
        */
 
       inline int mouseInput(void);
+#endif
 
       /**
        * This is the heart of the keyboard/mouse listener thread.  It
@@ -195,6 +263,19 @@ namespace Twm4Nx
        */
 
       ~CInput(void);
+
+#ifdef CONFIG_TWM4NX_TOUCHSCREEN
+      /**
+       * Provide touchscreen calibration data.  If calibration data is received (and
+       * the touchscreen is enabled), then received touchscreen data will be scaled
+       * using the calibration data and forward to the NX layer which dispatches the
+       * touchscreen events in window-relative positions to the correct NX window.
+       *
+       * @param caldata.  A reference to the touchscreen data.
+       */
+
+      void setCalibrationData(const struct SCalibrationData &caldata);
+#endif
 
       /**
        * Start the keyboard listener thread.

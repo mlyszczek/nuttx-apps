@@ -42,6 +42,7 @@
 /////////////////////////////////////////////////////////////////////////////
 
 #include <nuttx/config.h>
+#include <debug.h>
 
 #include "graphics/nxglyphs.hxx"
 #include "graphics/nxwidgets/nxconfig.hxx"
@@ -50,6 +51,18 @@
 /////////////////////////////////////////////////////////////////////////////
 // Pre-Processor Definitions
 /////////////////////////////////////////////////////////////////////////////
+
+// Debug ////////////////////////////////////////////////////////////////////
+
+#ifdef CONFIG_TWM4NX_DEBUG
+#  define twminfo(format, ...)   _info(format, ##__VA_ARGS__)
+#  define twmwarn(format, ...)   _warn(format, ##__VA_ARGS__)
+#  define twmerr(format, ...)    _err(format, ##__VA_ARGS__)
+#else
+#  define twminfo(format, ...)   ginfo(format, ##__VA_ARGS__)
+#  define twmwarn(format, ...)   gwarn(format, ##__VA_ARGS__)
+#  define twmerr(format, ...)    gerr(format, ##__VA_ARGS__)
+#endif
 
 // General Configuration ////////////////////////////////////////////////////
 
@@ -133,15 +146,15 @@
 // Spacing.  Defaults values good at 75 and 100 DPI
 
 #ifndef CONFIG_TWM4NX_TOOLBAR_HSPACING
-#  define CONFIG_TWM4NX_TOOLBAR_HSPACING 8
+#  define CONFIG_TWM4NX_TOOLBAR_HSPACING   2
 #endif
 
-#ifndef CONFIG_TWM4NX_ICONMGR_VSPACING
-#  define CONFIG_TWM4NX_FRAME_VSPACING   2
+#ifndef CONFIG_TWM4NX_FRAME_VSPACING
+#  define CONFIG_TWM4NX_FRAME_VSPACING     2
 #endif
 
 #ifndef CONFIG_TWM4NX_BUTTON_INDENT
-#  define CONFIG_TWM4NX_BUTTON_INDENT   1
+#  define CONFIG_TWM4NX_BUTTON_INDENT      1
 #endif
 
 #ifndef CONFIG_TWM4NX_ICONMGR_VSPACING
@@ -380,8 +393,9 @@
 /**
  * Configuration settings
  *
- * CONFIG_VNCSERVER - If selected, then keyboard and positional input will
- *   come from the VNC server.  In this case all input settings are ignored.
+ * CONFIG_TWM4NX_VNCSERVER - If selected, then keyboard and positional input
+ *   will come from the VNC server.  In this case all other input settings
+ *   are ignored.
  *
  * Common input device settings
  *
@@ -410,20 +424,31 @@
 /**
  * Mouse device settings
  *
+ * CONFIG_TWM4NX_NOMOUSE - Can be used to disable mouse input.
+ * CONFIG_TWM4NX_MOUSE - Input is from a mouse.
+ * CONFIG_TWM4NX_TOUSCREEN - Input is from a touchscreen.
  * CONFIG_TWM4NX_MOUSE_DEVPATH - The full path to the mouse device.
  *   Default: "/dev/console"
  * CONFIG_TWM4NX_MOUSE_USBHOST - Indicates the the mouse is attached via
  *   USB
  * CONFIG_TWM4NX_MOUSE_BUFSIZE - The size of the mouse read data buffer.
- *   Default: sizeof(struct mouse_report_s)
+ *   Default: sizeof(struct mouse_report_s) or SIZEOF_TOUCH_SAMPLE_S(1)
  */
 
 #ifndef CONFIG_TWM4NX_MOUSE_DEVPATH
-#  define CONFIG_TWM4NX_MOUSE_DEVPATH "/dev/mouse0"
+#  ifdef CONFIG_TWM4NX_MOUSE
+#    define CONFIG_TWM4NX_MOUSE_DEVPATH "/dev/mouse0"
+#  else
+#    define CONFIG_TWM4NX_MOUSE_DEVPATH "/dev/input0"
+#  endif
 #endif
 
 #ifndef CONFIG_TWM4NX_MOUSE_BUFSIZE
-#  define CONFIG_TWM4NX_MOUSE_BUFSIZE sizeof(struct mouse_report_s)
+#  ifdef CONFIG_TWM4NX_MOUSE
+#    define CONFIG_TWM4NX_MOUSE_BUFSIZE sizeof(struct mouse_report_s)
+#  else
+#    define CONFIG_TWM4NX_MOUSE_BUFSIZE SIZEOF_TOUCH_SAMPLE_S(1)
+#  endif
 #endif
 
 // Keyboard device ///////////////////////////////////////////////////////////
@@ -431,6 +456,7 @@
 /**
  * Keyboard device settings
  *
+ * CONFIG_TWM4NX_NOKEYBOARD - Can be used to disable keyboard input.
  * CONFIG_TWM4NX_KEYBOARD_DEVPATH - The full path to the keyboard device.
  *   Default: "/dev/console"
  * CONFIG_TWM4NX_KEYBOARD_USBHOST - Indicates the the keyboard is attached via

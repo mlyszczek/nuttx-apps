@@ -85,10 +85,11 @@ namespace NXWidgets
   {
   protected:
     NXHANDLE        m_hNxServer;     /**< Handle to the NX server. */
-    NXTKWINDOW      m_hNxTkWindow;   /**< Handle to the NX raw window */
+    NXTKWINDOW      m_hNxTkWindow;   /**< Handle to the NxTk window */
     CWidgetControl *m_widgetControl; /**< Controlling widget for the window */
     CNxToolbar     *m_toolbar;       /**< Child toolbar */
     nxgl_coord_t    m_toolbarHeight; /**< The height of the toolbar */
+    uint8_t         m_flags;         /**< Window properties */
 
   public:
 
@@ -111,9 +112,11 @@ namespace NXWidgets
      *
      * @param hNxServer Handle to the NX server.
      * @param widgetControl Controlling widget for this window.
+     * @param flags Window properties
      */
 
-    CNxTkWindow(NXHANDLE hNxServer, CWidgetControl *widgetControl);
+    CNxTkWindow(NXHANDLE hNxServer, CWidgetControl *widgetControl,
+                uint8_t flags);
 
     /**
      * Destructor.
@@ -229,7 +232,10 @@ namespace NXWidgets
      * @return True on success, false on any failure.
      */
 
-    bool raise(void);
+    inline bool raise(void)
+    {
+      return nxtk_raise(m_hNxTkWindow) == OK;
+    }
 
     /**
      * Lower the window to the bottom of the display.
@@ -237,7 +243,32 @@ namespace NXWidgets
      * @return True on success, false on any failure.
      */
 
-    bool lower(void);
+    inline bool lower(void)
+    {
+      return nxtk_lower(m_hNxTkWindow) == OK;
+    }
+
+    /**
+     * Show a hidden window
+     *
+     * @return True on success, false on any failure.
+     */
+
+    inline bool show(void)
+    {
+      return nxtk_setvisibility(m_hNxTkWindow, false) == OK;
+    }
+
+    /**
+     * Hide a visible window
+     *
+     * @return True on success, false on any failure.
+     */
+
+    inline bool hide(void)
+    {
+      return nxtk_setvisibility(m_hNxTkWindow, true) == OK;
+    }
 
     /**
      * May be used to either (1) raise a window to the top of the display and

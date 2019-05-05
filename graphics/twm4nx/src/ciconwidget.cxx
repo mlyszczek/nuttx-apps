@@ -127,8 +127,8 @@ bool CIconWidget::initialize(FAR NXWidgets::IBitmap *ibitmap,
   m_eventq = mq_open(mqname, O_WRONLY | O_NONBLOCK);
   if (m_eventq == (mqd_t)-1)
     {
-      gerr("ERROR: Failed open message queue '%s': %d\n",
-           mqname, errno);
+      twmerr("ERROR: Failed open message queue '%s': %d\n",
+             mqname, errno);
       return false;
     }
 
@@ -174,14 +174,19 @@ bool CIconWidget::initialize(FAR NXWidgets::IBitmap *ibitmap,
   FAR NXWidgets::CImage *image =
     new NXWidgets::CImage(m_widgetControl, iconImagePos.x,
                           iconImagePos.y, iconImageSize.w, iconImageSize.h,
-                          ibitmap, m_style);
+                          ibitmap, &m_style);
   if (image == (FAR NXWidgets::CImage *)0)
     {
-      gerr("ERROR: Failed to create image\n");
+      twmerr("ERROR: Failed to create image\n");
       return false;
     }
 
+  // Configure the image
+
   image->setBorderless(true);
+  image->disable();
+  image->disableDrawing();
+  image->setRaisesEvents(true);
 
   // Get the position icon text, centering horizontally if the image
   // width is larger than the text width
@@ -199,15 +204,22 @@ bool CIconWidget::initialize(FAR NXWidgets::IBitmap *ibitmap,
 
   FAR NXWidgets::CLabel *label =
     new NXWidgets::CLabel(m_widgetControl, iconLabelPos.x, iconLabelPos.y,
-                          iconLabelSize.w, iconLabelSize.h, title);
+                          iconLabelSize.w, iconLabelSize.h, title,
+                          &m_style);
   if (label == (FAR NXWidgets::CLabel *)0)
     {
-      gerr("ERROR: Failed to create icon label\n");
+      twmerr("ERROR: Failed to create icon label\n");
       delete image;
       return false;
     }
 
+  // Configure the icon label
+
+  label->setFont(iconFont);
   label->setBorderless(true);
+  label->disable();
+  label->disableDrawing();
+  label->setRaisesEvents(true);
 
   // Add the CImage to to the containing widget
 
@@ -316,7 +328,7 @@ void CIconWidget::handleUngrabEvent(const NXWidgets::CWidgetEventArgs &e)
                     sizeof(struct SEventMsg), 100);
   if (ret < 0)
     {
-      gerr("ERROR: mq_send failed: %d\n", ret);
+      twmerr("ERROR: mq_send failed: %d\n", ret);
     }
 }
 
@@ -356,7 +368,7 @@ void CIconWidget::handleDragEvent(const NXWidgets::CWidgetEventArgs &e)
                         sizeof(struct SEventMsg), 100);
       if (ret < 0)
         {
-          gerr("ERROR: mq_send failed: %d\n", ret);
+          twmerr("ERROR: mq_send failed: %d\n", ret);
         }
     }
 }
@@ -417,7 +429,7 @@ void CIconWidget::handleClickEvent(const NXWidgets::CWidgetEventArgs &e)
                         sizeof(struct SEventMsg), 100);
       if (ret < 0)
         {
-          gerr("ERROR: mq_send failed: %d\n", ret);
+          twmerr("ERROR: mq_send failed: %d\n", ret);
         }
     }
 }
@@ -576,17 +588,4 @@ bool CIconWidget::iconUngrab(FAR struct SEventMsg *eventmsg)
 
   m_twm4nx->setCursorImage(&CONFIG_TWM4NX_CURSOR_IMAGE);
   return false;
-}
-
-/**
- * Draw the area of this widget that falls within the clipping region.
- * Called by the redraw() function to draw all visible regions.
- * @param port The NXWidgets::CGraphicsPort to draw to.
- * @see redraw()
- */
-
-void CIconWidget::drawContents(NXWidgets::CGraphicsPort *port)
-{
-  port->drawFilledRect(getX(), getY(), getWidth(), getHeight(),
-                       getBackgroundColor());
 }

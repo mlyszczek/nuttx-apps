@@ -76,11 +76,31 @@
  * There is no focus indicator
  */
 
-#define MENU_BUTTON      0  // First on left
-#define DELETE_BUTTON    1  // First on right
-#define RESIZE_BUTTON    2
-#define MINIMIZE_BUTTON  3
-#define NTOOLBAR_BUTTONS 4
+#define MENU_BUTTON               0  // First on left
+#define DELETE_BUTTON             1  // First on right
+#define RESIZE_BUTTON             2
+#define MINIMIZE_BUTTON           3
+#define NTOOLBAR_BUTTONS          4
+
+// Windows may be customized with the flags parameter to the constructor.
+// These are the bits fields that may be OR'ed together in the flags.
+
+#define NO_TOOLBAR                (NTOOLBAR_BUTTONS + 0)
+#define ICONMGR_WINDOW            (NTOOLBAR_BUTTONS + 1)
+
+#define WFLAGS_NO_MENU_BUTTON     (1 << MENU_BUTTON)
+#define WFLAGS_NO_DELETE_BUTTON   (1 << DELETE_BUTTON)
+#define WFLAGS_NO_RESIZE_BUTTON   (1 << RESIZE_BUTTON)
+#define WFLAGS_NO_MINIMIZE_BUTTON (1 << MINIMIZE_BUTTON)
+#define WFLAGS_NO_TOOLBAR         (1 << NO_TOOLBAR)
+#define WFLAGS_IS_ICONMGR         (1 << ICONMGR_WINDOW)
+
+#define WFLAGS_HAVE_MENU_BUTTON(f)     (((f) & WFLAGS_NO_MENU_BUTTON) == 0)
+#define WFLAGS_HAVE_DELETE_BUTTON(f)   (((f) & WFLAGS_NO_DELETE_BUTTON) == 0)
+#define WFLAGS_HAVE_RESIZE_BUTTON(f)   (((f) & WFLAGS_NO_RESIZE_BUTTON) == 0)
+#define WFLAGS_HAVE_MINIMIZE_BUTTON(f) (((f) & WFLAGS_NO_MINIMIZE_BUTTON) == 0)
+#define WFLAGS_HAVE_TOOLBAR(f)         (((f) & WFLAGS_NO_TOOLBAR) == 0)
+#define WFLAGS_IS_ICONMGR_WINDOW(f)    (((f) & WFLAGS_IS_ICONMGR) != 0)
 
 /////////////////////////////////////////////////////////////////////////////
 // Implementation Classes
@@ -123,7 +143,6 @@ namespace Twm4Nx
 
       FAR CIconWidget            *m_iconWidget; /**< The icon widget */
       FAR CIconMgr               *m_iconMgr;    /**< Pointer to it if this is an icon manager */
-      bool                        m_isIconMgr;  /**< This is an icon manager window */
       bool                        m_iconMoved;  /**< User explicitly moved the icon. */
       bool                        m_iconOn;     /**< Icon is visible. */
       bool                        m_iconified;  /**< Is the window an icon now ? */
@@ -135,6 +154,7 @@ namespace Twm4Nx
       nxgl_coord_t                m_tbHeight;   /**< Height of the toolbar */
       nxgl_coord_t                m_tbLeftX;    /**< Rightmost position of left buttons */
       nxgl_coord_t                m_tbRightX;   /**< Leftmost position of right buttons */
+      uint8_t                     m_tbFlags;    /**< Toolbar button customizations */
 
       // List of all toolbar button images
 
@@ -164,9 +184,13 @@ namespace Twm4Nx
 
       /**
        * Create all toolbar buttons
+       *
+       * @param flags Toolbar customizations see WFLAGS_NO_* definitions
+       * @return True if the window was successfully initialize; false on
+       *   any failure,
        */
 
-      bool createToolbarButtons(void);
+      bool createToolbarButtons(uint8_t flags);
 
       /**
        * Add buttons and title widgets to the tool bar
@@ -190,16 +214,16 @@ namespace Twm4Nx
       bool updateToolbarLayout(void);
 
       /**
-       * Disable widget drawing and widget events.
+       * Disable toolbar widget drawing and widget events.
        */
 
-      bool disableWidgets(void);
+      bool disableToolbarWidgets(void);
 
       /**
-       * Enable widget drawing and widget events.
+       * Enable toolbar widget drawing and widget events.
        */
 
-      bool enableWidgets(void);
+      bool enableToolbarWidgets(void);
 
       /**
        * After the toolbar was grabbed, it may be dragged then dropped, or it
@@ -321,9 +345,8 @@ namespace Twm4Nx
        * @param pos       The initial position of the window
        * @param size      The initial size of the window
        * @param sbitmap   The Icon bitmap image
-       * @param isIconMgr Flag to tell if this is an icon manager window
        * @param iconMgr   Pointer to icon manager instance
-       * @param noToolbar True: Don't add Title Bar
+       * @param flags     Toolbar customizations see WFLAGS_NO_* definitions
        * @return True if the window was successfully initialize; false on
        *   any failure,
        */
@@ -332,7 +355,19 @@ namespace Twm4Nx
                       FAR const struct nxgl_point_s *pos,
                       FAR const struct nxgl_size_s *size,
                       FAR const struct NXWidgets::SRlePaletteBitmap *sbitmap,
-                      bool isIconMgr, FAR CIconMgr *iconMgr, bool noToolbar);
+                      FAR CIconMgr *iconMgr, uint8_t flags = 0);
+
+      /**
+       * Synchronize the window with the NX server.  This function will delay
+       * until the the NX server has caught up with all of the queued requests.
+       * When this function returns, the state of the NX server will be the
+       * same as the state of the application.
+       */
+
+      inline void synchronize(void)
+      {
+        m_nxWin->synchronize();
+      }
 
       /**
        * Get the widget control instance needed to support application drawing
@@ -359,7 +394,7 @@ namespace Twm4Nx
 
       inline bool isIconMgr(void)
       {
-        return m_isIconMgr;
+        return WFLAGS_IS_ICONMGR_WINDOW(m_tbFlags);
       }
 
       /**
@@ -432,6 +467,23 @@ namespace Twm4Nx
       inline bool lowerWindow(void)
       {
         return m_nxWin->lower();
+      }
+
+      /**
+       * Show a hidden window
+       */
+
+      inline bool showWindow(void)
+      {
+        return m_nxWin->show();
+      }
+      /**
+       * Hide a visible window
+       */
+
+      inline bool hideWindow(void)
+      {
+        return m_nxWin->hide();
       }
 
       /**
@@ -590,7 +642,21 @@ namespace Twm4Nx
 
       inline bool setIconWindowPosition(FAR const struct nxgl_point_s &pos)
       {
-        return m_iconWidget->resize(pos.x, pos.y);
+        return m_iconWidget->moveTo(pos.x, pos.y);
+      }
+
+      /**
+       * Redraw the icon.
+       */
+
+      inline void redrawIcon(void)
+      {
+        // Make sure that the icon is properly enabled, then redraw it
+
+        m_iconWidget->enable();
+        m_iconWidget->enableDrawing();
+        m_iconWidget->setRaisesEvents(true);
+        m_iconWidget->redraw();
       }
 
       /**
@@ -622,11 +688,16 @@ namespace Twm4Nx
       inline bool pollToolbarEvents(void)
       {
         NXWidgets::CWidgetControl *control = m_toolbar->getWidgetControl();
-        return control->pollEvents();
+
+       // pollEvents() returns true if any interesting event occurred.
+       // false is not a failure.
+
+        (void)control->pollEvents();
+        return true;
       }
 
       /**
-       * Handle Twm4Nx events.
+       * Handle EVENT_WINDOW events.
        *
        * @param eventmsg.  The received NxWidget WINDOW event message.
        * @return True if the message was properly handled.  false is

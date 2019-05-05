@@ -48,6 +48,7 @@
 
 #include "nuttx/nx/nxglib.h"
 
+#include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/ctwm4nx.hxx"
 #include "graphics/twm4nx/cwindow.hxx"
 #include "graphics/twm4nx/cwindowevent.hxx"
@@ -294,7 +295,7 @@ void CIcon::up(FAR CWindow *cwin)
 /**
  * Take the window down.
  *
- * @param vwin The window to be taken down.
+ * @param cwin The window to be taken down.
  */
 
 void CIcon::down(FAR CWindow *cwin)
@@ -335,6 +336,59 @@ void CIcon::down(FAR CWindow *cwin)
           else
             {
               break;
+            }
+        }
+    }
+}
+
+/**
+ * Redraw icons.  The icons are drawn on the background window.  When
+ * the background window receives a redraw request, it will call this
+ * method in order to redraw any effected icons drawn in the
+ * background.
+ *
+ * @param nxRect The region in the window to be redrawn
+ * @param more More redraw requests will follow
+ */
+
+void CIcon::redrawIcons(FAR const nxgl_rect_s *nxRect, bool more)
+{
+  twminfo("Redrawing...\n");
+
+  // Try each region
+
+  FAR struct SIconEntry *ie = (FAR struct SIconEntry *)0;
+  for (FAR struct SIconRegion *ir = m_regionHead; ir; ir = ir->flink)
+    {
+      // Try each entry in the region
+
+      for (ie = ir->entries; ie; ie = ie->flink)
+        {
+          // Create a bounding box for the icon
+
+          FAR CWindow *cwin = ie->cwin;
+
+          struct nxgl_size_s iconWindowSize;
+          cwin->getIconWidgetSize(iconWindowSize);
+
+          struct nxgl_point_s iconPosition;
+          cwin->getIconWidgetPosition(iconPosition);
+
+          struct nxgl_rect_s iconBounds;
+          iconBounds.pt1.x = iconPosition.x;
+          iconBounds.pt1.y = iconPosition.y;
+          iconBounds.pt2.x = iconPosition.x + iconWindowSize.w - 1;
+          iconBounds.pt2.y = iconPosition.y + iconWindowSize.h - 1;
+
+          struct nxgl_rect_s intersection;
+          nxgl_rectintersect(&intersection, nxRect, &iconBounds);
+
+          if (!nxgl_nullrect(&intersection))
+            {
+              // Redraw the icon (or a portion of the icon)
+
+              twminfo("Redraw icon\n");
+              cwin->redrawIcon();
             }
         }
     }

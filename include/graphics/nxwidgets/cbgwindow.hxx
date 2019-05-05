@@ -122,7 +122,7 @@ namespace NXWidgets
     virtual ~CBgWindow(void);
 
     /**
-     * Creates a the new window.  Window creation is separate from
+     * Creates the new window.  Window creation is separate from
      * object instantiation so that failures can be reported.
      *
      * @return True if the window was successfully created.
@@ -224,6 +224,32 @@ namespace NXWidgets
     inline bool lower(void)
     {
       // The background cannot be lowered
+
+      return false;
+    }
+
+    /**
+     * Show a hidden window
+     *
+     * @return Always returns false.
+     */
+
+    inline bool show(void)
+    {
+      // The background is always visible (although perhaps obscured)
+
+      return false;
+    }
+
+    /**
+     * Hide a visible window
+     *
+     * @return Always returns false.
+     */
+
+    inline bool hide(void)
+    {
+      // The background cannot be hidden
 
       return false;
     }

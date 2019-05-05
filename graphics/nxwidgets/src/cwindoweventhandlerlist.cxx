@@ -112,11 +112,11 @@ bool CWindowEventHandlerList::findWindowEventHandler(CWindowEventHandler *eventH
  * Raise the NX window redraw event.
  */
 
-void CWindowEventHandlerList::raiseRedrawEvent(void)
+void CWindowEventHandlerList::raiseRedrawEvent(FAR const struct nxgl_rect_s *nxRect, bool more)
 {
   for (int i = 0; i < m_eventHandlers.size(); ++i)
     {
-      m_eventHandlers.at(i)->handleRedrawEvent();
+      m_eventHandlers.at(i)->handleRedrawEvent(nxRect, more);
     }
 }
 
@@ -132,11 +132,11 @@ void CWindowEventHandlerList::raiseGeometryEvent(void)
     }
 }
 
+#ifdef CONFIG_NX_XYINPUT
 /**
  * Raise an NX mouse window input event.
  */
 
-#ifdef CONFIG_NX_XYINPUT
 void CWindowEventHandlerList::raiseMouseEvent(void)
 {
   for (int i = 0; i < m_eventHandlers.size(); ++i)
@@ -146,11 +146,11 @@ void CWindowEventHandlerList::raiseMouseEvent(void)
 }
 #endif
 
+#ifdef CONFIG_NX_KBD
 /**
  * Raise an NX keybord input event
  */
 
-#ifdef CONFIG_NX_KBD
 void CWindowEventHandlerList::raiseKeyboardEvent(void)
 {
   for (int i = 0; i < m_eventHandlers.size(); ++i)

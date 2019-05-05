@@ -1,7 +1,7 @@
 /****************************************************************************
  * apps/graphics/nxwidgets/src/cnxwindow.cxx
  *
- *   Copyright (C) 2012, 2015-2016 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2012, 2015-2016, 2019 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -57,14 +57,18 @@
 using namespace NXWidgets;
 
 /**
- * Constructor.
+ * Constructor.  Creates an uninitialized instance of the CNxWindow
+ * object.  The open() method must be called to initialize the instance.
  *
  * @param hNxServer Handle to the NX server.
+ * @param widgetControl Controlling widget for this window.
+ * @param flags Window properties
  */
 
-CNxWindow::CNxWindow(NXHANDLE hNxServer, CWidgetControl *pWidgetControl)
+CNxWindow::CNxWindow(NXHANDLE hNxServer, CWidgetControl *pWidgetControl,
+                     uint8_t flags)
   : CCallback(pWidgetControl), m_hNxServer(hNxServer), m_hNxWindow(0),
-    m_widgetControl(pWidgetControl)
+    m_widgetControl(pWidgetControl), m_flags(flags)
 {
   // Create the CGraphicsPort instance for this window
 
@@ -105,8 +109,8 @@ bool CNxWindow::open(void)
 
   // Create the window
 
-  m_hNxWindow = nx_openwindow(m_hNxServer, 0, vtable,
-                             (FAR void *)static_cast<CCallback*>(this));
+  m_hNxWindow = nx_openwindow(m_hNxServer, m_flags, vtable,
+                              (FAR void *)static_cast<CCallback*>(this));
   return m_hNxWindow != NULL;
 }
 
@@ -187,32 +191,6 @@ bool CNxWindow::setSize(FAR const struct nxgl_size_s *pSize)
   // Set the window size
 
   return nx_setsize(m_hNxWindow, pSize) == OK;
-}
-
-/**
- * Bring the window to the top of the display.
- *
- * @return True on success, false on any failure.
- */
-
-bool CNxWindow::raise(void)
-{
-  // Raise the window to the top of the display
-
-  return nx_raise(m_hNxWindow) == OK;
-}
-
-/**
- * Lower the window to the bottom of the display.
- *
- * @return True on success, false on any failure.
- */
-
-bool CNxWindow::lower(void)
-{
-  // Lower the window to the bottom of the display
-
-  return nx_lower(m_hNxWindow) == OK;
 }
 
 /**

@@ -179,10 +179,10 @@ namespace NXWidgets
                                                        awaiting deletion. */
     TNxArray<CNxWidget*>        m_widgets;        /**< List of controlled
                                                        widgets. */
-    bool                        m_haveGeometry;   /**< True: indicates that we
+    volatile bool               m_haveGeometry;   /**< True: indicates that we
                                                        have valid geometry data. */
 #ifdef CONFIG_NXWIDGET_EVENTWAIT
-    bool                        m_waiting;        /**< True: Extternal logic waiting for
+    bool                        m_waiting;        /**< True: External logic waiting for
                                                        window event */
     sem_t                       m_waitSem;        /**< External loops waits for
                                                        events on this semaphore */
@@ -298,11 +298,11 @@ namespace NXWidgets
 
     bool pollCursorControlEvents(void);
 
+#ifdef CONFIG_NXWIDGET_EVENTWAIT
     /**
      * Wake up and external logic that is waiting for a window event.
      */
 
-#ifdef CONFIG_NXWIDGET_EVENTWAIT
     void postWindowEvent(void);
 #endif
 
@@ -322,14 +322,14 @@ namespace NXWidgets
     }
 
     /**
-     * Wait for geometry data
+     * Check if geomtry data is available.  If not, [re-]request the
+     * geomtry data and wait for it to become valid.
+     * CAREFUL:  This assumes that if we already have geometry data, then
+     * it is valid.  This might not be true if the size position was
+     * recently changed.
      */
 
-    inline void waitGeoData(void)
-    {
-      takeGeoSem();
-      giveGeoSem();
-    }
+    void waitGeoData(void);
 
     /**
      * Take the bounds semaphore (handling signal interruptions)
@@ -382,6 +382,7 @@ namespace NXWidgets
 
     virtual ~CWidgetControl(void);
 
+#ifdef CONFIG_NXWIDGET_EVENTWAIT
     /**
      * Wait for an interesting window event to occur (like a mouse or keyboard event)
      * Caller's should exercise care to assure that the test for waiting and this
@@ -396,17 +397,16 @@ namespace NXWidgets
      *  sched_unlock();
      */
 
-#ifdef CONFIG_NXWIDGET_EVENTWAIT
     void waitForWindowEvent(void);
 #endif
 
+#ifdef CONFIG_NXWIDGET_EVENTWAIT
     /**
      * Is external logic awaiting for a window event?
      *
      * @return True if the widget if external logic is waiting.
      */
 
-#ifdef CONFIG_NXWIDGET_EVENTWAIT
     inline const bool isWaiting(void) const
     {
       return m_waiting;
@@ -619,6 +619,7 @@ namespace NXWidgets
 
     void newMouseEvent(FAR const struct nxgl_point_s *pos, uint8_t buttons);
 
+#ifdef CONFIG_NX_KBD
    /**
     * This event means that keyboard/keypad data is available for the window.
     *
@@ -626,7 +627,6 @@ namespace NXWidgets
     * @param pStr The array of characters.
     */
 
-#ifdef CONFIG_NX_KBD
     void newKeyboardEvent(uint8_t nCh, FAR const uint8_t *pStr);
 #endif
 
@@ -667,6 +667,15 @@ namespace NXWidgets
 
     inline NXHANDLE getWindowHandle(void)
     {
+      // Verify that we have the window handle
+
+      if (m_hWindow == (NXHANDLE)0)
+        {
+          // The window handle is saved at the same time as the bounds
+
+          waitBoundsData();
+        }
+
       return m_hWindow;
     }
 
@@ -698,6 +707,10 @@ namespace NXWidgets
 
     inline bool getWindowPosition(FAR struct nxgl_point_s *pos)
     {
+      // Check if we already have geometry data available.  CAREFUL:  This
+      // might refer to OLD geometry data if the position was recently
+      // changed!
+
       waitGeoData();
       pos->x = m_pos.x;
       pos->y = m_pos.y;
@@ -713,6 +726,10 @@ namespace NXWidgets
 
     inline bool getWindowSize(FAR struct nxgl_size_s *size)
     {
+      // Check if we already have geometry data available.  CAREFUL:  This
+      // might refer to OLD geometry data if the position was recently
+      // changed!
+
       waitGeoData();
       size->h = m_size.h;
       size->w = m_size.w;
@@ -728,6 +745,10 @@ namespace NXWidgets
 
     inline nxgl_coord_t getWindowWidth(void)
     {
+      // Check if we already have geometry data available.  CAREFUL:  This
+      // might refer to OLD geometry data if the position was recently
+      // changed!
+
       waitGeoData();
       return m_size.w;
     }
@@ -741,6 +762,10 @@ namespace NXWidgets
 
     inline nxgl_coord_t getWindowHeight(void)
     {
+      // Check if we already have geometry data available.  CAREFUL:  This
+      // might refer to OLD geometry data if the position was recently
+      // changed!
+
       waitGeoData();
       return m_size.h;
     }
@@ -799,3 +824,4 @@ namespace NXWidgets
 #endif // __cplusplus
 
 #endif // __APPS_INCLUDE_GRAPHICS_NXWIDGETS_CWIDGETCONTROLT_HXX
+

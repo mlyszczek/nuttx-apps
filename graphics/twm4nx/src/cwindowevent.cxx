@@ -43,10 +43,10 @@
 #include <cerrno>
 
 #include <mqueue.h>
-#include <debug.h>
 
 #include "graphics/nxwidgets/cwidgetcontrol.hxx"
 
+#include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/cwindow.hxx"
 #include "graphics/twm4nx/cwindowevent.hxx"
 
@@ -59,17 +59,22 @@ using namespace Twm4Nx;
 /**
  * CWindowEvent Constructor
  *
- * @param twm4nx.  The Twm4Nx session instance.
+ * @param twm4nx The Twm4Nx session instance.
+ * @param obj Contextual object (Usually 'this' of instantiator)
+ * @param isBackground True is this for the background window.
  * @param style The default style that all widgets on this display
  *   should use.  If this is not specified, the widget will use the
  *   values stored in the defaultCWidgetStyle object.
  */
 
-CWindowEvent::CWindowEvent(FAR CTwm4Nx *twm4nx,
+CWindowEvent::CWindowEvent(FAR CTwm4Nx *twm4nx, FAR void *obj,
+                           bool isBackground,
                            FAR const NXWidgets::CWidgetStyle *style)
 : NXWidgets::CWidgetControl(style)
 {
-  m_twm4nx = twm4nx;  // Cache the Twm4Nx session
+  m_twm4nx       = twm4nx;       // Cache the Twm4Nx session
+  m_object       = obj;          // Used for event message construction
+  m_isBackground = isBackground; // Background window?
 
   // Open a message queue to send raw NX events.  This cannot fail!
 
@@ -77,8 +82,8 @@ CWindowEvent::CWindowEvent(FAR CTwm4Nx *twm4nx,
   m_eventq = mq_open(mqname, O_WRONLY);
   if (m_eventq == (mqd_t)-1)
     {
-      gerr("ERROR: Failed open message queue '%s': %d\n",
-           mqname, errno);
+      twmerr("ERROR: Failed open message queue '%s': %d\n",
+             mqname, errno);
     }
 
   // Add ourself to the list of window event handlers
@@ -106,44 +111,13 @@ CWindowEvent::~CWindowEvent(void)
 }
 
 /**
- * Handle MSG events.
- *
- * @param msg.  The received system MSG event message.
- * @return True if the message was properly handled.  false is
- *   return on any failure.
- */
-
-bool CWindowEvent::event(FAR struct SEventMsg *eventmsg)
-{
-  bool success = true;
-
-  // Handle the event
-
-  switch (eventmsg->eventID)
-    {
-      case EVENT_MSG_POLL:  // Poll for event
-        {
-          // Poll for pending events before closing.
-
-          FAR CWindow *cwin = (FAR CWindow *)eventmsg->obj;
-          success = cwin->pollToolbarEvents();
-        }
-        break;
-
-      default:
-        success = false;
-        break;
-    }
-
-  return success;
-}
-
-/**
  * Send the EVENT_MSG_POLL input event message to the Twm4Nx event loop.
  */
 
 void CWindowEvent::sendInputEvent(void)
 {
+  twminfo("Input...\n");
+
   // The logic path here is tortuous but flexible:
   //
   //  1. A listener thread receives mouse or touchscreen input and injects
@@ -176,28 +150,68 @@ void CWindowEvent::sendInputEvent(void)
   //     in the Twm4Nx main thread.  The event will, finally be delivered
   //     to the recipient in its fully digested and decorated form.
 
-  struct SNxEventMsg msg =
-  {
-    .eventID  = EVENT_MSG_POLL,
-    .instance = this,
-    .win      = (FAR struct SWindow *)0
-  };
+  struct SNxEventMsg msg;
+  msg.eventID  = m_isBackground ? EVENT_BACKGROUND_POLL : EVENT_WINDOW_POLL;
+  msg.instance = this;
+  msg.obj      = m_object;
 
   int ret = mq_send(m_eventq, (FAR const char *)&msg,
                     sizeof(struct SNxEventMsg), 100);
   if (ret < 0)
     {
-      gerr("ERROR: mq_send failed: %d\n", ret);
+      twmerr("ERROR: mq_send failed: %d\n", ret);
     }
 }
 
 /**
+ * Handle a NX window redraw request event
+ *
+ * @param nxRect The region in the window to be redrawn
+ * @param more More redraw requests will follow
+ */
+
+void CWindowEvent::handleRedrawEvent(FAR const nxgl_rect_s *nxRect,
+                                     bool more)
+{
+  twminfo("background=%s\n", m_isBackground ? "YES" : "NO");
+
+  // At present, only the background window will get redraw events
+
+  if (m_isBackground)
+    {
+      struct SRedrawEventMsg msg;
+      msg.eventID = EVENT_BACKGROUND_REDRAW;
+      msg.rect.pt1.x = nxRect->pt1.x;
+      msg.rect.pt1.y = nxRect->pt1.y;
+      msg.rect.pt2.x = nxRect->pt2.x;
+      msg.rect.pt2.y = nxRect->pt2.y;
+      msg.more       = more;
+
+      // NOTE that we cannot block because we are on the same thread
+      // as the message reader.  If the event queue becomes full then
+      // we have no other option but to lose events.
+      //
+      // I suppose we could recurse and call Twm4Nx::dispatchEvent at
+      // the risk of runaway stack usage.
+
+      int ret = mq_send(m_eventq, (FAR const char *)&msg,
+                        sizeof(struct SRedrawEventMsg), 100);
+      if (ret < 0)
+        {
+          twmerr("ERROR: mq_send failed: %d\n", ret);
+        }
+    }
+}
+
+#ifdef CONFIG_NX_XYINPUT
+/**
  * Handle an NX window mouse input event.
  */
 
-#ifdef CONFIG_NX_XYINPUT
 void CWindowEvent::handleMouseEvent(void)
 {
+  twminfo("Mouse input...\n");
+
   // Stimulate an input poll
 
   sendInputEvent();
@@ -211,6 +225,8 @@ void CWindowEvent::handleMouseEvent(void)
 
 void CWindowEvent::handleKeyboardEvent(void)
 {
+  twminfo("Keyboard input...\n");
+
   // Stimulate an input poll
 
   sendInputEvent();
@@ -233,17 +249,19 @@ void CWindowEvent::handleKeyboardEvent(void)
 
 void CWindowEvent::handleBlockedEvent(FAR void *arg)
 {
+  twminfo("Blocked...\n");
+
   struct SNxEventMsg msg =
   {
     .eventID  = EVENT_WINDOW_DELETE,
     .instance = this,
-    .win      = (FAR struct SWindow *)arg
+    .obj      = arg
   };
 
   int ret = mq_send(m_eventq, (FAR const char *)&msg,
                     sizeof(struct SNxEventMsg), 100);
   if (ret < 0)
     {
-      gerr("ERROR: mq_send failed: %d\n", ret);
+      twmerr("ERROR: mq_send failed: %d\n", ret);
     }
 }
