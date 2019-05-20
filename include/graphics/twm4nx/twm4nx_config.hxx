@@ -117,19 +117,35 @@
  */
 
 #ifndef CONFIG_TWM4NX_MENU_IMAGE
-#  define CONFIG_TWM4NX_MENU_IMAGE      NXWidgets::g_menuBitmap
+#  ifdef CONFIG_TWM4NX_CLASSIC
+#    define CONFIG_TWM4NX_MENU_IMAGE      NXWidgets::g_menuBitmap
+#  else
+#    define CONFIG_TWM4NX_MENU_IMAGE      NXWidgets::g_menu2Bitmap
+#  endif
 #endif
 
 #ifndef CONFIG_TWM4NX_MINIMIZE_IMAGE
-#  define CONFIG_TWM4NX_MINIMIZE_IMAGE  NXWidgets::g_minimizeBitmap
+#  ifdef CONFIG_TWM4NX_CLASSIC
+#    define CONFIG_TWM4NX_MINIMIZE_IMAGE  NXWidgets::g_minimizeBitmap
+#  else
+#    define CONFIG_TWM4NX_MINIMIZE_IMAGE  NXWidgets::g_minimize2Bitmap
+#  endif
 #endif
 
 #ifndef CONFIG_TWM4NX_RESIZE_IMAGE
-#  define CONFIG_TWM4NX_RESIZE_IMAGE    NXWidgets::g_resizeBitmap
+#  ifdef CONFIG_TWM4NX_CLASSIC
+#    define CONFIG_TWM4NX_RESIZE_IMAGE    NXWidgets::g_resizeBitmap
+#  else
+#    define CONFIG_TWM4NX_RESIZE_IMAGE    NXWidgets::g_resize2Bitmap
+#  endif
 #endif
 
 #ifndef CONFIG_TWM4NX_TERMINATE_IMAGE
-#  define CONFIG_TWM4NX_TERMINATE_IMAGE NXWidgets::g_stopBitmap
+#  ifdef CONFIG_TWM4NX_CLASSIC
+#    define CONFIG_TWM4NX_TERMINATE_IMAGE NXWidgets::g_stopBitmap
+#  else
+#    define CONFIG_TWM4NX_TERMINATE_IMAGE NXWidgets::g_stop2Bitmap
+#  endif
 #endif
 
 #ifndef CONFIG_TWM4NX_ICONMGR_IMAGE
