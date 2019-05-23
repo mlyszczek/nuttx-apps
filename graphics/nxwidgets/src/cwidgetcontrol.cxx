@@ -1,7 +1,7 @@
 /****************************************************************************
  * apps/graphics/nxwidgets/src/cwidgetcontrol.cxx
  *
- *   Copyright (C) 2012-2013 Gregory Nutt. All rights reserved.
+ *   Copyright (C) 2012-2013, 2019 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -566,9 +566,9 @@ void CWidgetControl::newMouseEvent(FAR const struct nxgl_point_s *pos, uint8_t b
     }
 #endif
 
-  // Notify any external logic that a keyboard event has occurred
+  // Notify any external logic that a mouse event has occurred
 
-  m_eventHandlers.raiseMouseEvent();
+  m_eventHandlers.raiseMouseEvent(pos, buttons);
 
 #ifdef CONFIG_NXWIDGET_EVENTWAIT
   // Then wake up logic that may be waiting for a window event
@@ -737,9 +737,11 @@ uint32_t CWidgetControl::elapsedTime(FAR const struct timespec *startTime)
  * @param x Click xcoordinate.
  * @param y Click ycoordinate.
  * @param widget Pointer to a specific widget or NULL.
+ * @return True if is a widget responds to the left click
  */
 
-void CWidgetControl::handleLeftClick(nxgl_coord_t x, nxgl_coord_t y, CNxWidget *widget)
+bool CWidgetControl::handleLeftClick(nxgl_coord_t x, nxgl_coord_t y,
+                                     CNxWidget *widget)
 {
   // Working with a specific widget or the whole structure?
 
@@ -751,7 +753,7 @@ void CWidgetControl::handleLeftClick(nxgl_coord_t x, nxgl_coord_t y, CNxWidget *
         {
           if (m_widgets[i]->click(x, y))
             {
-              return;
+              return true;
             }
         }
     }
@@ -759,8 +761,10 @@ void CWidgetControl::handleLeftClick(nxgl_coord_t x, nxgl_coord_t y, CNxWidget *
     {
       // One widget
 
-      (void)widget->click(x, y);
+      return widget->click(x, y);
     }
+
+  return false;
 }
 
 /**
@@ -784,23 +788,29 @@ void CWidgetControl::processDeleteQueue(void)
  *
  * @param widget. Specific widget to poll.  Use NULL to run the
  *    all widgets in the window.
- * @return True means a mouse event occurred
+ * @return True means an interesting mouse event occurred
  */
 
 bool CWidgetControl::pollMouseEvents(CNxWidget *widget)
 {
 #ifdef CONFIG_NX_XYINPUT
-  bool mouseEvent = true;  // Assume that an interesting mouse event occurred
+  bool mouseEvent = false;  // Assume that no interesting mouse event occurred
 
-  // All widgets
+  // Left click event for all widgets
 
   if (m_xyinput.leftPressed)
     {
        // Handle a new left button press event
 
-       handleLeftClick(m_xyinput.x, m_xyinput.y, widget);
+       if (handleLeftClick(m_xyinput.x, m_xyinput.y, widget))
+         {
+           mouseEvent = true;
+         }
     }
-  else if (m_xyinput.leftDrag)
+
+  // Drag event for the clicked widget
+
+  if (!mouseEvent && m_xyinput.leftDrag)
     {
       // The left button is still being held down
 
@@ -811,19 +821,18 @@ bool CWidgetControl::pollMouseEvents(CNxWidget *widget)
           m_clickedWidget->drag(m_xyinput.x, m_xyinput.y,
                                 m_xyinput.x - m_xyinput.lastX,
                                 m_xyinput.y - m_xyinput.lastY);
+          mouseEvent = true;
         }
     }
-  else if (m_clickedWidget != (CNxWidget *)NULL)
+
+  // Check for release event on the clicked widget
+
+  if (!mouseEvent && m_clickedWidget != (CNxWidget *)NULL)
     {
       // Mouse left button release event
 
       m_clickedWidget->release(m_xyinput.x, m_xyinput.y);
-    }
-  else
-    {
-      // No interesting mouse events
-
-      mouseEvent = false;
+      mouseEvent = true;
     }
 
   // Clear all press and release events once they have been processed

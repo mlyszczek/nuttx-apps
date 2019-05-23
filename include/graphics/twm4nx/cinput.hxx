@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/cinput.hxx
+// apps/include/graphics/twm4nx/cinput.hxx
 // Keyboard injection
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -124,6 +124,8 @@ namespace Twm4Nx
        * CInput state data
        */
 
+      // Session
+
       CTwm4Nx                     *m_twm4nx;  /**< The Twm4Nx session */
 #ifndef CONFIG_TWM4NX_NOKEYBOARD
       int                          m_kbdFd;   /**< File descriptor of the opened keyboard device */
@@ -131,14 +133,20 @@ namespace Twm4Nx
 #ifndef CONFIG_TWM4NX_NOMOUSE
       int                          m_mouseFd; /**< File descriptor of the opened mouse device */
 #endif
+
+      // Listener
+
       pthread_t                    m_thread;  /**< The listener thread ID */
       volatile enum EListenerState m_state;   /**< The state of the listener thread */
       sem_t                        m_waitSem; /**< Used to synchronize with the listener thread */
 
 #ifdef CONFIG_TWM4NX_TOUCHSCREEN
+      // Calibration
+
       bool                         m_calib;   /**< False:  Use raw, uncalibrated touches */
       struct SCalibrationData      m_calData; /**< Touchscreen calibration data */
 #endif
+
 
 #ifndef CONFIG_TWM4NX_NOKEYBOARD
       /**
@@ -266,19 +274,38 @@ namespace Twm4Nx
 
 #ifdef CONFIG_TWM4NX_TOUCHSCREEN
       /**
-       * Provide touchscreen calibration data.  If calibration data is received (and
-       * the touchscreen is enabled), then received touchscreen data will be scaled
-       * using the calibration data and forward to the NX layer which dispatches the
-       * touchscreen events in window-relative positions to the correct NX window.
+       * Before starting re-calibration, we need to disable touchscreen
+       * calibration and provide raw touchscreen input.  Similarly, when
+       * valid touchscreen calibration has been provided via
+       * CInput::setCalibrationData(), then touchscreen processing must
+       * be re-enabled via this method.
+       *
+       * @param enable True will enable calibration.
+       */
+
+       inline void enableCalibration(bool enable)
+       {
+         m_calib = enable;
+       }
+
+      /**
+       * Provide touchscreen calibration data.  If calibration data is
+       * received (and the touchscreen is enabled), then received
+       * touchscreen data will be scaled using the calibration data and
+       * forward to the NX layer which dispatches the touchscreen events
+       * in window-relative positions to the correct NX window.
        *
        * @param caldata.  A reference to the touchscreen data.
        */
 
-      void setCalibrationData(const struct SCalibrationData &caldata);
+      inline void setCalibrationData(const struct SCalibrationData &caldata)
+      {
+        m_calData = caldata;
+      }
 #endif
 
       /**
-       * Start the keyboard listener thread.
+       * Start the keyboard/mouse listener thread.
        *
        * @return True if the keyboard listener thread was correctly started.
        */

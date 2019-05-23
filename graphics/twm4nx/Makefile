@@ -54,13 +54,27 @@ STACKSIZE = $(CONFIG_TWM4NX_STACKSIZE)
 
 ASRCS     =
 CSRCS     =
-CXXSRCS   = cbackground.cxx cfonts.cxx cicon.cxx ciconmgr.cxx
-CXXSRCS  += ciconwidget.cxx cinput.cxx cmenus.cxx cresize.cxx
-CXXSRCS  += cwindow.cxx cwindowevent.cxx cwindowfactory.cxx
+CXXSRCS   = twm4nx_main.cxx
+CXXSRCS  += cbackground.cxx cfonts.cxx ciconmgr.cxx ciconwidget.cxx
+CXXSRCS  += cmenus.cxx cmainmenu.cxx
+CXXSRCS  += cwindow.cxx cwindowevent.cxx cresize.cxx cwindowfactory.cxx
+CXXSRCS  += cinput.cxx
+
+ifeq ($(CONFIG_TWM4NX_MOUSE),y)
 CXXSRCS  += twm4nx_cursor.cxx
+endif
+
+ifeq ($(CONFIG_TWM4NX_CALIBRATION),y)
+CXXSRCS  += ccalibration.cxx
+endif
+
+ifeq ($(CONFIG_TWM4NX_NXTERM),y)
+CXXSRCS  += cnxterm.cxx
+endif
+
 MAINSRC   = ctwm4nx.cxx
 
-VPATH     = src
+VPATH     = src:apps
 
 CONFIG_TWM4NX_PROGNAME ?= hello$(EXEEXT)
 PROGNAME = $(CONFIG_TWM4NX_PROGNAME)

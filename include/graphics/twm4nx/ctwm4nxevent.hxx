@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/ctwmnxevent.hxx
+// apps/include/graphics/twm4nx/ctwmnxevent.hxx
 // Twm4Nx Event handler base class
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -34,23 +34,19 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 
-#ifndef __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVNT_HXX
-#define __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVNT_HXX
+#ifndef __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVENT_HXX
+#define __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVENT_HXX
 
-/****************************************************************************
- * Included Files
- ****************************************************************************/
+/////////////////////////////////////////////////////////////////////////////
+// Included Files
+/////////////////////////////////////////////////////////////////////////////
 
 #include <nuttx/config.h>
 #include <cstdbool>
 
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Implementation Class Definition
- ****************************************************************************/
+/////////////////////////////////////////////////////////////////////////////
+// Implementation Class Definition
+/////////////////////////////////////////////////////////////////////////////
 
 namespace Twm4Nx
 {
@@ -88,4 +84,4 @@ namespace Twm4Nx
   };
 }
 
-#endif // __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVNT_HXX
+#endif // __APPS_INCLUDE_GRAPHICS_TWM4NX_CTWM4NXEVENT_HXX

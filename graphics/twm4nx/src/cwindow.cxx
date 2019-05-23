@@ -11,6 +11,8 @@
 //   Copyright 1988 by Evans & Sutherland Computer Corporation,
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -66,6 +68,8 @@
 #include "graphics/nxwidgets/cimage.hxx"
 #include "graphics/nxwidgets/clabel.hxx"
 #include "graphics/nxwidgets/cnxfont.hxx"
+#include "graphics/nxwidgets/singletons.hxx"
+#include "graphics/nxwidgets/cwidgetstyle.hxx"
 
 #include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/ctwm4nx.hxx"
@@ -78,7 +82,7 @@
 #include "graphics/twm4nx/cwindow.hxx"
 #include "graphics/twm4nx/cwindowfactory.hxx"
 #include "graphics/twm4nx/ctwm4nxevent.hxx"
-#include "graphics/twm4nx/twm4nx_widgetevents.hxx"
+#include "graphics/twm4nx/twm4nx_events.hxx"
 #include "graphics/twm4nx/twm4nx_cursor.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -112,7 +116,7 @@ struct SToolbarInfo GToolBarInfo[NTOOLBAR_BUTTONS] =
   },
   [RESIZE_BUTTON] =
   {
-    &CONFIG_TWM4NX_RESIZE_IMAGE, true, EVENT_TOOLBAR_RESIZE
+    &CONFIG_TWM4NX_RESIZE_IMAGE, true, EVENT_RESIZE_BUTTON
   },
   [MINIMIZE_BUTTON] =
   {
@@ -132,39 +136,57 @@ struct SToolbarInfo GToolBarInfo[NTOOLBAR_BUTTONS] =
 
 CWindow::CWindow(CTwm4Nx *twm4nx)
 {
-  m_twm4nx               = twm4nx;       // Save the Twm4Nx session
-  m_eventq               = (mqd_t)-1;    // No widget message queue yet
+  m_twm4nx                = twm4nx;       // Save the Twm4Nx session
+  m_eventq                = (mqd_t)-1;    // No widget message queue yet
 
   // Windows
 
-  m_nxWin                = (FAR NXWidgets::CNxTkWindow *)0;
-  m_toolbar              = (FAR NXWidgets::CNxToolbar *)0;
-  m_zoom                 = ZOOM_NONE;
-  m_modal                = false;
+  m_nxWin                 = (FAR NXWidgets::CNxTkWindow *)0;
+  m_toolbar               = (FAR NXWidgets::CNxToolbar *)0;
+  m_windowEvent           = (FAR CWindowEvent *)0;
+  m_minWidth              = 1;
+  m_modal                 = false;
+
+  // Events
+
+  m_appEvents.eventObj    = (FAR void *)0;
+  m_appEvents.redrawEvent = EVENT_SYSTEM_NOP; // Redraw event ID
+  m_appEvents.mouseEvent  = EVENT_SYSTEM_NOP; // Mouse/touchscreen event ID
+  m_appEvents.kbdEvent    = EVENT_SYSTEM_NOP; // Keyboard event ID
+  m_appEvents.closeEvent  = EVENT_SYSTEM_NOP; // Window close event ID
+  m_appEvents.deleteEvent = EVENT_SYSTEM_NOP; // Window delete event ID
 
   // Toolbar
 
-  m_tbTitle              = (FAR NXWidgets::CLabel *)0;
-  m_tbHeight             = 0;             // Height of the toolbar
-  m_tbLeftX              = 0;             // Temporaries
-  m_tbRightX             = 0;
-  m_tbFlags              = 0;             // No customizations
+  m_tbTitle               = (FAR NXWidgets::CLabel *)0;
+  m_tbHeight              = 0;             // Height of the toolbar
+  m_tbLeftX               = 0;             // Offset to end of left buttons
+  m_tbRightX              = 0;             // Offset to start of right buttons
+  m_tbFlags               = 0;             // No customizations
+  m_tbDisables            = 0;             // No buttons disabled
+
+  // Style for the toolbar widgets.  It is the same as the default
+  // widget style, but using the color assigned to the toolbar background.
+
+  m_tbStyle               = *NXWidgets::g_defaultWidgetStyle;
+  m_tbStyle.colors.background         = CONFIG_TWM4NX_DEFAULT_TOOLBARCOLOR;
+  m_tbStyle.colors.selectedBackground = CONFIG_TWM4NX_DEFAULT_TOOLBARCOLOR;
 
   // Icons/Icon Manager
 
-  m_iconBitMap           = (FAR NXWidgets::CRlePaletteBitmap *)0;
-  m_iconWidget           = (FAR CIconWidget *)0;
-  m_iconMgr              = (FAR CIconMgr *)0;
-  m_iconOn               = false;
-  m_iconified            = false;
+  m_iconBitMap            = (FAR NXWidgets::CRlePaletteBitmap *)0;
+  m_iconWidget            = (FAR CIconWidget *)0;
+  m_iconMgr               = (FAR CIconMgr *)0;
+  m_iconified             = false;
 
   // Dragging
 
-  m_drag                 = false;
-  m_dragOffset.x         = 0;
-  m_dragOffset.y         = 0;
-  m_dragCSize.w          = 0;
-  m_dragCSize.h          = 0;
+  m_clicked               = false;
+  m_dragging              = false;
+  m_dragPos.x             = 0;
+  m_dragPos.y             = 0;
+  m_dragCSize.w           = 0;
+  m_dragCSize.h           = 0;
 
   // Toolbar buttons
 
@@ -183,17 +205,22 @@ CWindow::~CWindow(void)
 /**
  * CWindow Initializer (unlike the constructor, this may fail)
  *
+ * The window is initialized with all application events disabled.
+ * The CWindows::configureEvents() method may be called as a second
+ * initialization step in order to enable application events.
+ *
  * @param name      The the name of the window (and its icon)
- * @param pos       The initialize position of the window
+ * @param pos       The initial position of the window
  * @param size      The initial size of the window
- * @param sbitmap   The Icon bitmap image
- * @param iconMgr   Pointer to icon manager instance
+ * @param sbitmap   The Icon bitmap image.  null if no icon.
+ * @param iconMgr   Pointer to icon manager instance.  To support
+ *                  multiple Icon Managers.
  * @param flags     Toolbar customizations see WFLAGS_NO_* definition
  * @return True if the window was successfully initialize; false on
  *   any failure,
  */
 
-bool CWindow::initialize(FAR const char *name,
+bool CWindow::initialize(FAR const NXWidgets::CNxString &name,
                          FAR const struct nxgl_point_s *pos,
                          FAR const struct nxgl_size_s *size,
                          FAR const struct NXWidgets::SRlePaletteBitmap *sbitmap,
@@ -211,15 +238,33 @@ bool CWindow::initialize(FAR const char *name,
       return false;
     }
 
-  m_iconMgr = iconMgr;
+  // If no Icon Manager was provided, we will use the standard Icon Manager
 
-  if (name == (FAR const char *)0)
+  if (iconMgr == (FAR CIconMgr *)0)
     {
-      m_name = std::strdup(GNoName);
+      m_iconMgr = m_twm4nx->getIconMgr();
     }
   else
     {
-      m_name = std::strdup(name);
+      m_iconMgr = iconMgr;
+    }
+
+  if (name.getLength() == 0)
+    {
+      m_name.setText(GNoName);
+    }
+  else
+    {
+      m_name.setText(name);
+    }
+
+  // Get the minimum window size.  We need this minimum later for resizing.
+  // If there is no toolbar, leave the minimum at one pixel as it was set by
+  // the constructor.
+
+  if (WFLAGS_HAVE_TOOLBAR(flags))
+    {
+      m_minWidth = minimumToolbarWidth(m_twm4nx, m_name, flags);
     }
 
   // Do initial clip to the maximum window size
@@ -240,8 +285,6 @@ bool CWindow::initialize(FAR const char *name,
       winsize.h = maxWindow.h;
     }
 
-  m_iconOn = false;
-
   // Create the window
 
   m_nxWin   = (FAR NXWidgets::CNxTkWindow *)0;
@@ -249,7 +292,7 @@ bool CWindow::initialize(FAR const char *name,
 
   // Create the main window
 
-  if (!createMainWindow(&winsize, pos))
+  if (!createMainWindow(&winsize, pos, flags))
     {
       twmerr("ERROR: createMainWindow() failed\n");
       cleanup();
@@ -299,49 +342,80 @@ bool CWindow::initialize(FAR const char *name,
         }
     }
 
-  // Create the icon image instance
+  // Create and initialize the icon widget if a bitmap was provided
 
-  m_iconBitMap = new NXWidgets::CRlePaletteBitmap(sbitmap);
-  if (m_iconBitMap == (NXWidgets::CRlePaletteBitmap *)0)
+  if (sbitmap != (FAR const struct NXWidgets::SRlePaletteBitmap *)0)
     {
-      twmerr("ERROR: Failed to create icon image\n");
-      cleanup();
-      return false;
+      // Create the icon image instance
+
+      m_iconBitMap = new NXWidgets::CRlePaletteBitmap(sbitmap);
+      if (m_iconBitMap == (NXWidgets::CRlePaletteBitmap *)0)
+        {
+          twmerr("ERROR: Failed to create icon image\n");
+          cleanup();
+          return false;
+        }
+
+      // Create a style for the Icon widget.  It is the same as the default
+      // widget style, but using the color assigned to the background as the
+      // widget background color.
+
+      NXWidgets::CWidgetStyle style   = *NXWidgets::g_defaultWidgetStyle;
+      style.colors.background         = CONFIG_TWM4NX_DEFAULT_BACKGROUNDCOLOR;
+      style.colors.selectedBackground = CONFIG_TWM4NX_DEFAULT_BACKGROUNDCOLOR;
+
+      // Get the widget control instance from the background.  This is needed
+      // to force the icon widgets to be drawn on the background
+
+      FAR CBackground *background = m_twm4nx->getBackground();
+      FAR NXWidgets::CWidgetControl *control = background->getWidgetControl();
+
+      m_iconWidget = new CIconWidget(m_twm4nx, control, pos->x, pos->y, &style);
+      if (m_iconWidget == (FAR CIconWidget *)0)
+        {
+          twmerr("ERROR: Failed to create the icon widget\n");
+          cleanup();
+          return false;
+        }
+
+      if (!m_iconWidget->initialize(this, m_iconBitMap, m_name))
+        {
+          twmerr("ERROR: Failed to initialize the icon widget\n");
+          cleanup();
+          return false;
+        }
+
+      // Initialize the icon widget
+
+      m_iconWidget->disable();
+      m_iconWidget->disableDrawing();
+      m_iconWidget->setRaisesEvents(true);
     }
-
-  // Get the widget control instance from the background.  This is needed
-  // to force the icon widgets to be draw on the background
-
-  FAR CBackground *background = m_twm4nx->getBackground();
-  FAR NXWidgets::CWidgetControl *control = background->getWidgetControl();
-
-  // Create and initialize the icon widget
-
-  m_iconWidget = new CIconWidget(m_twm4nx, control, pos->x, pos->y);
-  if (m_iconWidget == (FAR CIconWidget *)0)
-    {
-      twmerr("ERROR: Failed to create the icon widget\n");
-      cleanup();
-      return false;
-    }
-
-  if (!m_iconWidget->initialize(m_iconBitMap, m_name))
-    {
-      twmerr("ERROR: Failed to initialize the icon widget\n");
-      cleanup();
-      return false;
-    }
-
-  // Initialize the icon widget
-
-  m_iconWidget->disable();
-  m_iconWidget->disableDrawing();
-  m_iconWidget->setRaisesEvents(true);
 
   // Re-enable toolbar widgets
 
   enableToolbarWidgets();
   return true;
+}
+
+/**
+ * Configure application window events.
+ *
+ * @param events Describes the application event configuration
+ * @return True is returned on success
+ */
+
+bool CWindow::configureEvents(FAR const struct SAppEvents &events)
+{
+  m_appEvents.eventObj     = events.eventObj;    // Event object
+  m_appEvents.redrawEvent  = events.redrawEvent; // Redraw event ID
+  m_appEvents.resizeEvent  = events.resizeEvent; // Resize event ID
+  m_appEvents.mouseEvent   = events.mouseEvent;  // Mouse/touchscreen event ID
+  m_appEvents.kbdEvent     = events.kbdEvent;    // Keyboard event ID
+  m_appEvents.closeEvent   = events.closeEvent;  // Window close event ID
+  m_appEvents.deleteEvent  = events.deleteEvent; // Window delete event ID
+
+  return m_windowEvent->configureEvents(events);
 }
 
 /**
@@ -370,12 +444,12 @@ bool CWindow::getFrameSize(FAR struct nxgl_size_s *framesize)
  * Update the window frame after a resize operation (includes the toolbar
  * and user window)
  *
- * @param size The new window frame size
- * @param pos  The frame location which may also have changed
+ * @param frameSize The new window frame size
+ * @param framePos  The frame location which may also have changed
  */
 
-bool CWindow::resizeFrame(FAR const struct nxgl_size_s *size,
-                          FAR struct nxgl_point_s *pos)
+bool CWindow::resizeFrame(FAR const struct nxgl_size_s *frameSize,
+                          FAR const struct nxgl_point_s *framePos)
 {
   // Account for toolbar and border
 
@@ -383,25 +457,25 @@ bool CWindow::resizeFrame(FAR const struct nxgl_size_s *size,
   delta.w = 2 * CONFIG_NXTK_BORDERWIDTH;
   delta.h = m_tbHeight + 2 * CONFIG_NXTK_BORDERWIDTH;
 
-  // Don't set the window size smaller than one pixel
+  // Don't set the window size smaller than the minimum window size
 
   struct nxgl_size_s winsize;
-  if (size->w <= delta.w)
+  if (frameSize->w <= m_minWidth + delta.w)
     {
-      winsize.w = 1;
+      winsize.w = m_minWidth;
     }
   else
     {
-      winsize.w = size->w - delta.w;
+      winsize.w = frameSize->w - delta.w;
     }
 
-  if (size->h <= delta.h)
+  if (frameSize->h <= delta.h)
     {
       winsize.h = 1;
     }
   else
     {
-      winsize.h = size->h - delta.h;
+      winsize.h = frameSize->h - delta.h;
     }
 
   // Set the usable window size
@@ -413,13 +487,16 @@ bool CWindow::resizeFrame(FAR const struct nxgl_size_s *size,
       return false;
     }
 
-  // Set the new frame position (in case it changed too)
-
-  success = setFramePosition(pos);
-  if (!success)
+  if (framePos != (FAR const struct nxgl_point_s *)0)
     {
-      twmerr("ERROR: Failed to setSize()\n");
-      return false;
+      // Set the new frame position (in case it changed too)
+
+      success = setFramePosition(framePos);
+      if (!success)
+        {
+          twmerr("ERROR: Failed to setFramePosition()\n");
+          return false;
+        }
     }
 
   // Synchronize with the NX server to make sure that the new geometry is
@@ -429,7 +506,40 @@ bool CWindow::resizeFrame(FAR const struct nxgl_size_s *size,
 
   // Then update the toolbar layout (if there is one)
 
-  return updateToolbarLayout();
+  success = updateToolbarLayout();
+  if (!success)
+    {
+      twmerr("ERROR: updateToolbarLayout() failed\n");
+      return false;
+    }
+
+  // Check if the application using this window is interested in resize
+  // events
+
+  if (m_appEvents.resizeEvent != EVENT_SYSTEM_NOP)
+    {
+      twminfo("Close event...\n");
+
+      // Send the application specific [pre-]close event
+
+      struct SEventMsg outmsg;
+      outmsg.eventID  = m_appEvents.resizeEvent;
+      outmsg.obj      = (FAR void *)this;
+      outmsg.pos.x    = 0;
+      outmsg.pos.y    = 0;
+      outmsg.context  = EVENT_CONTEXT_WINDOW;
+      outmsg.handler  = m_appEvents.eventObj;
+
+      int ret = mq_send(m_eventq, (FAR const char *)&outmsg,
+                        sizeof(struct SEventMsg), 100);
+      if (ret < 0)
+        {
+          twmerr("ERROR: mq_send failed: %d\n", errno);
+          return false;
+        }
+   }
+
+  return true;
 }
 
 /**
@@ -472,32 +582,64 @@ bool CWindow::setFramePosition(FAR const struct nxgl_point_s *framepos)
   return m_nxWin->setPosition(&winpos);
 }
 
-void CWindow::iconify(void)
+/**
+ * Minimize (iconify) the window
+ *
+ * @return True if the operation was successful
+ */
+
+bool CWindow::iconify(void)
 {
   if (!isIconified())
     {
-      // Make sure to exit any modal state before minimizing
+     // Make sure to exit any modal state before minimizing
 
       m_modal = false;
       m_nxWin->modal(false);
 
       // Hide the main window
 
-      m_iconified = true;
       m_nxWin->hide();
 
-      // Enable and redraw the icon widget and lower the main window
+      // Menu windows don't have an icon
 
-      m_iconOn = true;
-      m_iconWidget->enable();
-      m_iconWidget->enableDrawing();
-      m_iconWidget->redraw();
+      if (hasIcon())
+        {
+          // Enable the widget
 
+          m_iconWidget->enable();
+
+          // Pick a position for icon
+
+          struct nxgl_point_s iconPos;
+          m_iconWidget->getPos(iconPos);
+
+          FAR CWindowFactory *factory = m_twm4nx->getWindowFactory();
+          if (factory->placeIcon(this, iconPos, iconPos))
+            {
+              m_iconWidget->moveTo(iconPos.x, iconPos.y);
+            }
+
+          // Redraw the icon widget
+
+          m_iconWidget->enableDrawing();
+          m_iconWidget->redraw();
+        }
+
+      m_iconified = true;
       m_nxWin->synchronize();
     }
+
+  return true;
 }
 
-void CWindow::deIconify(void)
+/**
+ * De-iconify the window
+ *
+ * @return True if the operation was successful
+ */
+
+bool CWindow::deIconify(void)
 {
   // De-iconify the window
 
@@ -508,14 +650,38 @@ void CWindow::deIconify(void)
       m_iconified = false;
       m_nxWin->show();
 
-      // Hide the icon widget
+      if (hasIcon())
+        {
+          // Disable the icon widget
 
-      m_iconOn = false;
-      m_iconWidget->disableDrawing();
-      m_iconWidget->disable();
+          m_iconWidget->disableDrawing();
+          m_iconWidget->disable();
+
+          // Redraw the background window in the rectangle previously
+          // occupied by the widget.
+
+          struct nxgl_size_s size;
+          m_iconWidget->getSize(size);
+
+          struct nxgl_rect_s rect;
+          m_iconWidget->getPos(rect.pt1);
+
+          rect.pt2.x = rect.pt1.x + size.w - 1;
+          rect.pt2.y = rect.pt1.y + size.h - 1;
+
+          FAR CBackground *backgd = m_twm4nx->getBackground();
+          if (!backgd->redrawBackgroundWindow(&rect, false))
+            {
+              twmerr("ERROR: redrawBackgroundWindow() failed\n");
+            }
+        }
+
+      // Make sure everything is in sync
 
       m_nxWin->synchronize();
     }
+
+  return true;
 }
 
 /**
@@ -532,27 +698,18 @@ bool CWindow::event(FAR struct SEventMsg *eventmsg)
 
   switch (eventmsg->eventID)
     {
-      case EVENT_WINDOW_RAISE:     // Raise window to the top of the heirarchy
+      case EVENT_WINDOW_RAISE:     // Raise window to the top of the hierarchy
         m_nxWin->raise();          // Could be the main or the icon window
         break;
 
-      case EVENT_WINDOW_LOWER:     // Lower window to the bottom of the heirarchy
+      case EVENT_WINDOW_LOWER:     // Lower window to the bottom of the hierarchy
         m_nxWin->lower();          // Could be the main or the icon window
         break;
 
       case EVENT_WINDOW_DEICONIFY: // De-iconify and raise the main window
         {
-          deIconify();
+          success = deIconify();
         }
-        break;
-
-      case EVENT_WINDOW_FOCUS:
-        if (!isIconified())
-          {
-            m_modal = !m_modal;
-            m_nxWin->modal(m_modal);
-          }
-
         break;
 
       case EVENT_TOOLBAR_MENU:       // Toolbar menu button released
@@ -565,13 +722,7 @@ bool CWindow::event(FAR struct SEventMsg *eventmsg)
         {
           // Minimize (iconify) the window
 
-          iconify();
-        }
-        break;
-
-      case EVENT_TOOLBAR_RESIZE:     // Toolbar resize button released
-        {
-          // REVISIT:  Not yet implemented (but don't raise an error)
+          success = iconify();
         }
         break;
 
@@ -580,21 +731,42 @@ bool CWindow::event(FAR struct SEventMsg *eventmsg)
           {
             // Don't terminate the Icon manager, just hide it
 
-            CIconMgr *iconMgr = m_twm4nx->getIconMgr();
-            DEBUGASSERT(iconMgr != (CIconMgr *)0);
-
-            iconMgr->hide();
+            m_iconMgr->hide();
           }
         else
           {
+            // Inform the application that the window is disappearing
+
+            if (m_appEvents.closeEvent != EVENT_SYSTEM_NOP)
+              {
+                twminfo("Close event...\n");
+
+                // Send the application specific [pre-]close event
+
+                struct SEventMsg outmsg;
+                outmsg.eventID  = m_appEvents.closeEvent;
+                outmsg.obj      = (FAR void *)this;
+                outmsg.pos.x    = eventmsg->pos.x;
+                outmsg.pos.y    = eventmsg->pos.y;
+                outmsg.context  = eventmsg->context;
+                outmsg.handler  = m_appEvents.eventObj;
+
+                int ret = mq_send(m_eventq, (FAR const char *)&outmsg,
+                                  sizeof(struct SEventMsg), 100);
+                if (ret < 0)
+                  {
+                    twmerr("ERROR: mq_send failed: %d\n", errno);
+                  }
+             }
+
             // Close the window... but not yet.  Send the blocked message.
             // The actual termination will no occur until the NX server
             // drains all of the message events.  We will get the
             // EVENT_WINDOW_DELETE event at that point
 
-          NXWidgets::CWidgetControl *control = m_nxWin->getWidgetControl();
-          nxtk_block(control->getWindowHandle(), (FAR void *)m_nxWin);
-        }
+            NXWidgets::CWidgetControl *control = m_nxWin->getWidgetControl();
+            nxtk_block(control->getWindowHandle(), (FAR void *)m_nxWin);
+          }
 
         break;
 
@@ -607,13 +779,6 @@ bool CWindow::event(FAR struct SEventMsg *eventmsg)
 
           FAR CWindowFactory *factory = m_twm4nx->getWindowFactory();
           factory->destroyWindow(cwin);
-        }
-        break;
-
-      case EVENT_WINDOW_UNFOCUS:  // Exit modal state
-        {
-          m_modal = false;
-          m_nxWin->modal(false);
         }
         break;
 
@@ -640,12 +805,19 @@ bool CWindow::event(FAR struct SEventMsg *eventmsg)
 /**
  * Create the main window
  *
+ * Initially, the application window will generate no window-related events
+ * (redraw, mouse/touchscreen, keyboard input, etc.).  After creating the
+ * window, the user may call the configureEvents() method to select the
+ * eventIDs of the events to be generated.
+ *
  * @param winsize   The initial window size
  * @param winpos    The initial window position
+ * @param flags Toolbar customizations see WFLAGS_NO_* definitions
  */
 
 bool CWindow::createMainWindow(FAR const nxgl_size_s *winsize,
-                               FAR const nxgl_point_s *winpos)
+                               FAR const nxgl_point_s *winpos,
+                               uint8_t flags)
 {
   // 1. Get the server instance.  m_twm4nx inherits from NXWidgets::CNXServer
   //    so we all ready have the server instance.
@@ -653,15 +825,27 @@ bool CWindow::createMainWindow(FAR const nxgl_size_s *winsize,
 
   // 3. Create a Widget control instance for the window using the default
   //    style for now.  CWindowEvent derives from CWidgetControl.
+  //    Setup the the CWindowEvent instance to use our inherited drag event
+  //    handler
 
-  FAR CWindowEvent *control = new CWindowEvent(m_twm4nx, (FAR void *)this);
+  m_windowEvent = new CWindowEvent(m_twm4nx, (FAR void *)this, m_appEvents);
+  m_windowEvent->installEventTap(this, (uintptr_t)1);
 
-  // 4. Create the window
+  // 4. Create the window.  Handling provided flags. NOTE: that menu windows
+  //    are always created hidden and in the iconified state (although they
+  //    have no icons)
 
-  m_nxWin = m_twm4nx->createFramedWindow(control, NXBE_WINDOW_RAMBACKED);
+  uint8_t cflags = NXBE_WINDOW_RAMBACKED;
+  if (WFLAGS_IS_HIDDEN(flags) | WFLAGS_IS_MENU(flags))
+    {
+      cflags |= NXBE_WINDOW_HIDDEN;
+    }
+
+  m_nxWin = m_twm4nx->createFramedWindow(m_windowEvent, cflags);
   if (m_nxWin == (FAR NXWidgets::CNxTkWindow *)0)
     {
-      delete control;
+      delete m_windowEvent;
+      m_windowEvent = (FAR CWindowEvent *)0;
       return false;
     }
 
@@ -687,6 +871,10 @@ bool CWindow::createMainWindow(FAR const nxgl_size_s *winsize,
       return false;
     }
 
+  //  Menu windows are always created hidden and in the iconified state
+  // (although they have no icons)
+
+  m_iconified = WFLAGS_IS_MENU(flags);
   return true;
 }
 
@@ -694,7 +882,7 @@ bool CWindow::createMainWindow(FAR const nxgl_size_s *winsize,
  * Calculate the height of the tool bar
  */
 
-bool CWindow::getToolbarHeight(FAR const char *name)
+bool CWindow::getToolbarHeight(FAR const NXWidgets::CNxString &name)
 {
   // The tool bar height is the largest of the toolbar button heights or the
   // title text font
@@ -702,7 +890,7 @@ bool CWindow::getToolbarHeight(FAR const char *name)
   // Check if there is a title.  If so, get the font height.
 
   m_tbHeight = 0;
-  if (name != (FAR const char *)0)
+  if (name.getLength() != 0)
     {
       FAR CFonts *fonts = m_twm4nx->getFonts();
       FAR NXWidgets::CNxFont *titleFont = fonts->getTitleFont();
@@ -720,9 +908,9 @@ bool CWindow::getToolbarHeight(FAR const char *name)
         }
     }
 
-  // Plus somoe lines for good separation
+  // Plus some lines for good separation
 
-  m_tbHeight += CONFIG_TWM4NX_FRAME_VSPACING;
+  m_tbHeight += CONFIG_TWM4NX_TOOLBAR_VSPACING;
   return true;
 }
 
@@ -738,7 +926,18 @@ bool CWindow::createToolbar(void)
   // 2. Create a Widget control instance for the window using the default
   //    style for now.  CWindowEvent derives from CWidgetControl.
 
-  FAR CWindowEvent *control = new CWindowEvent(m_twm4nx, (FAR void *)this);
+  struct SAppEvents events;
+  events.eventObj    = (FAR void *)this;
+  events.redrawEvent = EVENT_SYSTEM_NOP;
+  events.resizeEvent = EVENT_SYSTEM_NOP;
+  events.mouseEvent  = EVENT_TOOLBAR_XYINPUT;
+  events.kbdEvent    = EVENT_SYSTEM_NOP;
+  events.closeEvent  = EVENT_SYSTEM_NOP;
+  events.deleteEvent = EVENT_WINDOW_DELETE;
+
+  FAR CWindowEvent *control = new CWindowEvent(m_twm4nx, (FAR void *)this,
+                                               events);
+  control->installEventTap(this, (uintptr_t)0);
 
   // 3. Get the toolbar sub-window from the framed window
 
@@ -759,10 +958,27 @@ bool CWindow::createToolbar(void)
     }
 
   // 5. Fill the entire tool bar with the background color from the
-  //    current widget system.
+  //    current widget style.
 
-  // Get the graphics port for drawing on the background window
+  if (!fillToolbar())
+    {
+      delete m_toolbar;
+      m_toolbar = (FAR NXWidgets::CNxToolbar *)0;
+      return false;
+    }
 
+  return true;
+}
+
+/**
+ * Fill the toolbar background color
+ */
+
+bool CWindow::fillToolbar(void)
+{
+  // Get the graphics port for drawing on the toolbar
+
+  FAR NXWidgets::CWidgetControl *control = m_toolbar->getWidgetControl();
   NXWidgets::CGraphicsPort *port = control->getGraphicsPort();
 
   // Get the size of the window
@@ -770,16 +986,15 @@ bool CWindow::createToolbar(void)
   struct nxgl_size_s windowSize;
   if (!m_toolbar->getSize(&windowSize))
     {
-      delete m_toolbar;
-      m_toolbar = (FAR NXWidgets::CNxToolbar *)0;
+      twmerr("ERROR: Failed to get the size of the toolbar\n");
       return false;
     }
 
-  // Get the background color of the current widget system.
-  // REVISIT:  No widgets yet, using the the non-shadowed border color
+  // Fill the toolbar with the background color of the current widget style
+  // (which is always the default widget style for now).
 
   port->drawFilledRect(0, 0, windowSize.w, windowSize.h,
-                       CONFIG_NXTK_BORDERCOLOR1);
+                       NXWidgets::g_defaultWidgetStyle->colors.background);
   return true;
 }
 
@@ -797,7 +1012,17 @@ bool CWindow::updateToolbarLayout(void)
   // Reposition all right buttons.  Change the width of the
   // toolbar does not effect the left side spacing.
 
-  m_tbRightX = 0;
+  struct nxgl_size_s winsize;
+  if (!getWindowSize(&winsize))
+    {
+      twmerr("ERROR: Failed to get window size\n");
+      return false;
+    }
+
+  // Set up the toolbar horizontal spacing
+
+  m_tbRightX = winsize.w;
+
   for (int btindex = 0; btindex < NTOOLBAR_BUTTONS; btindex++)
     {
       if (m_tbButtons[btindex] != (FAR NXWidgets::CImage *)0 &&
@@ -822,7 +1047,7 @@ bool CWindow::updateToolbarLayout(void)
 
          if (!cimage->moveTo(pos.x, pos.y))
            {
-             twmerr("ERROR: Faile to move button image\n");
+             twmerr("ERROR: Failed to move button image\n");
              return false;
            }
         }
@@ -837,11 +1062,27 @@ bool CWindow::updateToolbarLayout(void)
 
   struct nxgl_size_s titleSize;
   titleSize.h = m_tbHeight;
-  titleSize.w = m_tbRightX - m_tbLeftX - CONFIG_TWM4NX_FRAME_VSPACING + 1;
+  titleSize.w = m_tbRightX - m_tbLeftX - CONFIG_TWM4NX_TOOLBAR_HSPACING + 1;
 
-  bool success = m_tbTitle->resize(titleSize.w, titleSize.h);
+  if (!m_tbTitle->resize(titleSize.w, titleSize.h))
+    {
+      twmerr("ERROR: Failed to resize title\n");
+      return false;
+    }
+
+  // Fill the entire tool bar with the background color from the current
+  // widget style.
+
+  if (!fillToolbar())
+    {
+      twmerr("ERROR: Failed to fill the toolbar\n");
+      return false;
+    }
+
+  // Enable and re-draw all of the toolbar widgets
+
   enableToolbarWidgets();
-  return success;
+  return true;
 }
 
 /**
@@ -866,7 +1107,7 @@ bool CWindow::disableToolbarWidgets(void)
 }
 
 /**
- * Enable toolbar widget drawing and widget events.
+ * Enable and redraw toolbar widget drawing and widget events.
  */
 
 bool CWindow::enableToolbarWidgets(void)
@@ -960,7 +1201,7 @@ bool CWindow::createToolbarButtons(uint8_t flags)
       h = scaler->getHeight();
 
       m_tbButtons[btindex] =
-        new NXWidgets::CImage(control, 0, 0, w, h, scaler, 0);
+        new NXWidgets::CImage(control, 0, 0, w, h, scaler, &m_tbStyle);
       if (m_tbButtons[btindex] == (FAR NXWidgets::CImage *)0)
         {
           twmerr("ERROR: Failed to create image\n");
@@ -980,7 +1221,7 @@ bool CWindow::createToolbarButtons(uint8_t flags)
       h = cbitmap->getHeight();
 
       m_tbButtons[btindex] =
-        new NXWidgets::CImage(control, 0, 0, w, h, cbitmap, 0);
+        new NXWidgets::CImage(control, 0, 0, w, h, cbitmap, &m_tbStyle);
       if (m_tbButtons[btindex] == (FAR NXWidgets::CImage *)0)
         {
           twmerr("ERROR: Failed to create image\n");
@@ -1041,11 +1282,11 @@ bool CWindow::createToolbarButtons(uint8_t flags)
  * @param name The name to use for the toolbar title
  */
 
-bool CWindow::createToolbarTitle(FAR const char *name)
+bool CWindow::createToolbarTitle(FAR const NXWidgets::CNxString &name)
 {
   // Is there a title?
 
-  if (name == (FAR const char *)0)
+  if (name.getLength() == 0)
     {
       // No.. then there is nothing to be done here
 
@@ -1084,7 +1325,7 @@ bool CWindow::createToolbarTitle(FAR const char *name)
   // Create the toolbar title widget
 
   m_tbTitle = new NXWidgets::CLabel(control, titlePos.x, titlePos.y,
-                                    titleSize.w, titleSize.h, name);
+                                    titleSize.w, titleSize.h, name, &m_tbStyle);
   if (m_tbTitle == (FAR NXWidgets::CLabel *)0)
     {
       twmerr("ERROR: Failed to construct tool bar title widget\n");
@@ -1111,32 +1352,27 @@ bool CWindow::createToolbarTitle(FAR const char *name)
 
 /**
  * After the toolbar was grabbed, it may be dragged then dropped, or it
- * may be simply "un-grabbed". Both cases are handled here.
+ * may be simply "un-grabbed".  Both cases are handled here.
  *
  * NOTE: Unlike the other event handlers, this does NOT override any
  * virtual event handling methods.  It just combines some common event-
  * handling logic.
  *
- * @param e The event data.
+ * @param x The mouse/touch X position.
+ * @param y The mouse/touch y position.
  */
 
-void CWindow::handleUngrabEvent(const NXWidgets::CWidgetEventArgs &e)
+void CWindow::handleUngrabEvent(nxgl_coord_t x, nxgl_coord_t y)
 {
-  // Exit the dragging state
-
-  m_drag = false;
-
   // Generate the un-grab event
 
   struct SEventMsg msg;
   msg.eventID = EVENT_TOOLBAR_UNGRAB;
-  msg.pos.x   = e.getX();
-  msg.pos.y   = e.getY();
-  msg.delta.x = 0;
-  msg.delta.y = 0;
-  msg.context = EVENT_CONTEXT_TOOLBAR;
-  msg.handler = (FAR CTwm4NxEvent *)0;
   msg.obj     = (FAR void *)this;
+  msg.pos.x   = x;
+  msg.pos.y   = y;
+  msg.context = EVENT_CONTEXT_TOOLBAR;
+  msg.handler = (FAR void *)0;
 
   // NOTE that we cannot block because we are on the same thread
   // as the message reader.  If the event queue becomes full then
@@ -1149,71 +1385,7 @@ void CWindow::handleUngrabEvent(const NXWidgets::CWidgetEventArgs &e)
                     sizeof(struct SEventMsg), 100);
   if (ret < 0)
     {
-      twmerr("ERROR: mq_send failed: %d\n", ret);
-    }
-}
-
-/**
- * Override the mouse button drag event.
- *
- * @param e The event data.
- */
-
-void CWindow::handleDragEvent(const NXWidgets::CWidgetEventArgs &e)
-{
-  // We are interested only the the drag event on the title box while we are
-  // in the dragging state.
-
-  if (m_drag && m_tbTitle->isBeingDragged())
-    {
-      // Generate the event
-
-      struct SEventMsg msg;
-      msg.eventID = EVENT_WINDOW_DRAG;
-      msg.pos.x   = e.getX();
-      msg.pos.y   = e.getY();
-      msg.delta.x = e.getVX();
-      msg.delta.y = e.getVY();
-      msg.context = EVENT_CONTEXT_TOOLBAR;
-      msg.handler = (FAR CTwm4NxEvent *)0;
-      msg.obj     = (FAR void *)this;
-
-      // NOTE that we cannot block because we are on the same thread
-      // as the message reader.  If the event queue becomes full then
-      // we have no other option but to lose events.
-      //
-      // I suppose we could recurse and call Twm4Nx::dispatchEvent at
-      // the risk of runaway stack usage.
-
-      int ret = mq_send(m_eventq, (FAR const char *)&msg,
-                        sizeof(struct SEventMsg), 100);
-      if (ret < 0)
-        {
-          twmerr("ERROR: mq_send failed: %d\n", ret);
-        }
-    }
-}
-
-/**
- * Override a drop event, triggered when the widget has been dragged-and-dropped.
- *
- * @param e The event data.
- */
-
-void CWindow::handleDropEvent(const NXWidgets::CWidgetEventArgs &e)
-{
-  // We are interested only the the drag drop event on the title box while we
-  // are in the dragging state.
-  //
-  // When the Drop Event is received, both isClicked and isBeingDragged()
-  // will return false.  It is sufficient to verify that the isClicked() is
-  // not true to exit the drag.
-
-  if (m_drag && !m_tbTitle->isClicked())
-    {
-      // Yes.. handle the drop event
-
-      handleUngrabEvent(e);
+      twmerr("ERROR: mq_send failed: %d\n", errno);
     }
 }
 
@@ -1228,19 +1400,17 @@ void CWindow::handleClickEvent(const NXWidgets::CWidgetEventArgs &e)
   // We are interested only the the press event on the title box and
   // only if we are not already dragging the window
 
-  if (!m_drag && m_tbTitle->isClicked())
+  if (!m_dragging && m_tbTitle->isClicked())
     {
       // Generate the event
 
       struct SEventMsg msg;
       msg.eventID = EVENT_TOOLBAR_GRAB;
+      msg.obj     = (FAR void *)this;
       msg.pos.x   = e.getX();
       msg.pos.y   = e.getY();
-      msg.delta.x = 0;
-      msg.delta.y = 0;
       msg.context = EVENT_CONTEXT_TOOLBAR;
-      msg.handler = (FAR CTwm4NxEvent *)0;
-      msg.obj     = (FAR void *)this;
+      msg.handler = (FAR void *)0;
 
       // NOTE that we cannot block because we are on the same thread
       // as the message reader.  If the event queue becomes full then
@@ -1253,7 +1423,7 @@ void CWindow::handleClickEvent(const NXWidgets::CWidgetEventArgs &e)
                         sizeof(struct SEventMsg), 100);
       if (ret < 0)
         {
-          twmerr("ERROR: mq_send failed: %d\n", ret);
+          twmerr("ERROR: mq_send failed: %d\n", errno);
         }
     }
 }
@@ -1271,7 +1441,7 @@ void CWindow::handleReleaseEvent(const NXWidgets::CWidgetEventArgs &e)
   // Handle the case where a release event was received, but the
   // window was not dragged.
 
-  if (m_drag && !m_tbTitle->isClicked())
+  if (m_dragging && !m_tbTitle->isClicked())
     {
       // A click with no drag should raise the window.
 
@@ -1279,7 +1449,7 @@ void CWindow::handleReleaseEvent(const NXWidgets::CWidgetEventArgs &e)
 
       // Handle the non-drag drop event
 
-      handleUngrabEvent(e);
+      handleUngrabEvent(e.getX(), e.getY());
     }
 }
 
@@ -1299,6 +1469,14 @@ void CWindow::handleActionEvent(const NXWidgets::CWidgetEventArgs &e)
 
   for (int btindex = 0; btindex < NTOOLBAR_BUTTONS; btindex++)
     {
+      // Check if this button is omitted by toolbar customizations or if the
+      // button is temporarily disabled.
+
+      if (((m_tbFlags | m_tbDisables) & (1 << btindex)) != 0)
+        {
+          continue;
+        }
+
       // Check if the widget is clicked
 
       if (m_tbButtons[btindex] != (FAR NXWidgets::CImage *)0 &&
@@ -1308,13 +1486,11 @@ void CWindow::handleActionEvent(const NXWidgets::CWidgetEventArgs &e)
 
           struct SEventMsg msg;
           msg.eventID = GToolBarInfo[btindex].event;
+          msg.obj     = (FAR void *)this;
           msg.pos.x   = e.getX();
           msg.pos.y   = e.getY();
-          msg.delta.x = 0;
-          msg.delta.y = 0;
           msg.context = EVENT_CONTEXT_TOOLBAR;
-          msg.handler = (FAR CTwm4NxEvent *)0;
-          msg.obj     = (FAR void *)this;
+          msg.handler = (FAR void *)0;
 
           // NOTE that we cannot block because we are on the same thread
           // as the message reader.  If the event queue becomes full then
@@ -1327,10 +1503,146 @@ void CWindow::handleActionEvent(const NXWidgets::CWidgetEventArgs &e)
                             sizeof(struct SEventMsg), 100);
           if (ret < 0)
             {
-              twmerr("ERROR: mq_send failed: %d\n", ret);
+              twmerr("ERROR: mq_send failed: %d\n", errno);
             }
         }
     }
+}
+
+/**
+ * This function is called when there is any movement of the mouse or
+ * touch position that would indicate that the object is being moved.
+ *
+ * This function overrides the virtual IEventTap::moveEvent method.
+ *
+ * @param pos The current mouse/touch X/Y position in toolbar relative
+ *   coordinates.
+ * @return True: if the drag event was processed; false it was
+ *   ignored.  The event should be ignored if there is not actually
+ *   a drag event in progress
+ */
+
+bool CWindow::moveEvent(FAR const struct nxgl_point_s &pos,
+                        uintptr_t arg)
+{
+  twminfo("m_dragging=%u pos=(%d,%d)\n", m_dragging, pos.x, pos.y);
+
+  // We are interested only the drag event while we are in the dragging
+  // state.
+
+  if (m_dragging)
+    {
+      // arg == 0 means that this a toolbar event vs s main window event.
+      // Since the position is relative in both cases, we need a fix-up in
+      // the height to keep the same toolbar relative position in all cases.
+
+      nxgl_coord_t yIncr = ((arg == 0) ? 0 : m_tbHeight);
+
+      // Generate the event
+
+      struct SEventMsg msg;
+      msg.eventID = EVENT_WINDOW_DRAG;
+      msg.obj     = (FAR void *)this;
+      msg.pos.x   = pos.x;
+      msg.pos.y   = pos.y + yIncr;
+      msg.context = EVENT_CONTEXT_TOOLBAR;
+      msg.handler = (FAR void *)0;
+
+      // NOTE that we cannot block because we are on the same thread
+      // as the message reader.  If the event queue becomes full then
+      // we have no other option but to lose events.
+      //
+      // I suppose we could recurse and call Twm4Nx::dispatchEvent at
+      // the risk of runaway stack usage.
+
+      int ret = mq_send(m_eventq, (FAR const char *)&msg,
+                        sizeof(struct SEventMsg), 100);
+      if (ret < 0)
+        {
+          twmerr("ERROR: mq_send failed: %d\n", errno);
+        }
+
+      return true;
+    }
+
+  return false;
+}
+
+/**
+ * This function is called if the mouse left button is released or
+ * if the touchscreen touch is lost.  This indicates that the
+ * dragging sequence is complete.
+ *
+ * This function overrides the virtual IEventTap::dropEvent method.
+ *
+ * @param pos The last mouse/touch X/Y position in toolbar relative
+ *   coordinates.
+ * @return True: If the drag event was processed; false it was
+ *   ignored.  The event should be ignored if there is not actually
+ *   a drag event in progress
+ */
+
+bool CWindow::dropEvent(FAR const struct nxgl_point_s &pos,
+                        uintptr_t arg)
+{
+  twminfo("m_dragging=%u pos=(%d,%d)\n", m_dragging, pos.x, pos.y);
+
+  // We are interested only the the drag drop event on the title box while we
+  // are in the dragging state.
+  //
+  // When the Drop Event is received, both isClicked and isBeingDragged()
+  // will return false.  It is sufficient to verify that the isClicked() is
+  // not true to exit the drag.
+
+  if (m_dragging)
+    {
+      // Yes.. handle the drop event
+
+      // arg == 0 means that this a tooolbar event vs s main window event.
+      // Since the position is relative in both cases, we need a fix-up in
+      // the height to keep the same toolbar relative position in all cases.
+
+      nxgl_coord_t yIncr = ((arg == 0) ? 0 : m_tbHeight);
+
+      handleUngrabEvent(pos.x, pos.y + yIncr);
+      return true;
+    }
+
+  return false;
+}
+
+/**
+ * Is dragging enabled?
+ *
+ * @param arg The user-argument provided that accompanies the callback
+ * @return True: If the dragging is enabled.
+ */
+
+bool CWindow::isActive(uintptr_t arg)
+{
+  return m_clicked;
+}
+
+/**
+ * Enable/disable dragging
+ *
+ * True is provided when (1) isActive() returns false, but (2) a mouse
+ *   report with a left-click is received.
+ * False is provided when (1) isActive() returns true, but (2) a mouse
+ *   report without a left-click is received.
+ *
+ * In the latter is redundant since dropEvent() will be called immediately
+ * afterward.
+ *
+ * @param pos.  The mouse position at the time of the click or release
+ * @param enable.  True:  Enable dragging
+ * @param arg The user-argument provided that accompanies the callback
+ */
+
+void CWindow::enableMovement(FAR const struct nxgl_point_s &pos,
+                             bool enable, uintptr_t arg)
+{
+  m_clicked = enable;
 }
 
 /**
@@ -1344,6 +1656,27 @@ void CWindow::handleActionEvent(const NXWidgets::CWidgetEventArgs &e)
 
 bool CWindow::toolbarGrab(FAR struct SEventMsg *eventmsg)
 {
+  twminfo("GRAB (%d,%d)\n", eventmsg->pos.x, eventmsg->pos.y);
+
+  // Override application mouse events while dragging.  This is necessary to
+  // to handle cases where the drag that starts in the toolbar is moved
+  // into the application window area.
+
+  struct SAppEvents events;
+  events.eventObj    = (FAR void *)this;
+  events.redrawEvent = EVENT_SYSTEM_NOP;
+  events.resizeEvent = EVENT_SYSTEM_NOP;
+  events.mouseEvent  = EVENT_TOOLBAR_XYINPUT;
+  events.kbdEvent    = EVENT_SYSTEM_NOP;
+  events.closeEvent  = m_appEvents.closeEvent;
+  events.deleteEvent = m_appEvents.deleteEvent;
+
+  bool success = m_windowEvent->configureEvents(events);
+  if (!success)
+    {
+      return false;
+    }
+
   // Promote the window to a modal window
 
   m_modal = true;
@@ -1351,18 +1684,22 @@ bool CWindow::toolbarGrab(FAR struct SEventMsg *eventmsg)
 
   // Indicate that dragging has started.
 
-  m_drag = true;
+  m_dragging = true;
 
   // Get the frame position.
 
   struct nxgl_point_s framePos;
   getFramePosition(&framePos);
 
-  // Determine the relative position of the frame and the mouse
+  twminfo("Position (%d,%d)\n", framePos.x, framePos.y);
 
-  m_dragOffset.x = framePos.x - eventmsg->pos.x;
-  m_dragOffset.y = framePos.y - eventmsg->pos.y;
+  // Save the toolbar-relative mouse position in order to detect the amount
+  // of movement in the next drag event.
 
+  m_dragPos.x = eventmsg->pos.x;
+  m_dragPos.y = eventmsg->pos.y;
+
+#ifdef CONFIG_TWM4NX_MOUSE
   // Select the grab cursor image
 
   m_twm4nx->setCursorImage(&CONFIG_TWM4NX_GBCURSOR_IMAGE);
@@ -1371,6 +1708,14 @@ bool CWindow::toolbarGrab(FAR struct SEventMsg *eventmsg)
 
   m_dragCSize.w = CONFIG_TWM4NX_GBCURSOR_IMAGE.size.w;
   m_dragCSize.h = CONFIG_TWM4NX_GBCURSOR_IMAGE.size.h;
+
+#else
+  // Fudge a value for the case where we are using a touchscreen.
+
+  m_dragCSize.w = 16;
+  m_dragCSize.h = 16;
+#endif
+
   return true;
 }
 
@@ -1385,13 +1730,34 @@ bool CWindow::toolbarGrab(FAR struct SEventMsg *eventmsg)
 
 bool CWindow::windowDrag(FAR struct SEventMsg *eventmsg)
 {
-  if (m_drag)
-    {
-      // Calculate the new Window position
+  twminfo("DRAG (%d,%d)\n", eventmsg->pos.x, eventmsg->pos.y);
 
-      struct nxgl_point_s newpos;
-      newpos.x = eventmsg->pos.x + m_dragOffset.x;
-      newpos.y = eventmsg->pos.y + m_dragOffset.y;
+  if (m_dragging)
+    {
+      // The coordinates in the eventmsg are relative to the origin
+      // of the toolbar.
+
+      // Get the current (old) frame position
+
+      struct nxgl_point_s oldPos;
+      if (!getFramePosition(&oldPos))
+        {
+          twmerr("ERROR: getFramePosition() failed\n")  ;
+          return false;
+        }
+
+      // We want to set the new frame position so that the new
+      // mouse position is at the same relative position as it
+      // was when the toolbar title was first grabbed.
+
+      struct nxgl_point_s newPos;
+      newPos.x = oldPos.x + eventmsg->pos.x - m_dragPos.x;
+      newPos.y = oldPos.y + eventmsg->pos.y - m_dragPos.y;
+
+      // Save the new mouse position
+
+      m_dragPos.x = eventmsg->pos.x;
+      m_dragPos.y = eventmsg->pos.y;
 
       // Keep the window on the display (at least enough of it so that we
       // can still grab it)
@@ -1399,27 +1765,41 @@ bool CWindow::windowDrag(FAR struct SEventMsg *eventmsg)
       struct nxgl_size_s displaySize;
       m_twm4nx->getDisplaySize(&displaySize);
 
-      if (newpos.x < 0)
+      if (newPos.x < 0)
         {
-          newpos.x = 0;
+          newPos.x = 0;
         }
-      else if (newpos.x + m_dragCSize.w > displaySize.w)
+      else if (newPos.x + m_dragCSize.w > displaySize.w)
         {
-          newpos.x = displaySize.w - m_dragCSize.w;
-        }
-
-      if (newpos.y < 0)
-        {
-          newpos.y = 0;
-        }
-      else if (newpos.y + m_dragCSize.h > displaySize.h)
-        {
-          newpos.y = displaySize.h - m_dragCSize.h;
+          newPos.x = displaySize.w - m_dragCSize.w;
         }
 
-      // Set the new window position
+      if (newPos.y < 0)
+        {
+          newPos.y = 0;
+        }
+      else if (newPos.y + m_dragCSize.h > displaySize.h)
+        {
+          newPos.y = displaySize.h - m_dragCSize.h;
+        }
 
-      return setFramePosition(&newpos);
+      // Set the new window position if it has changed
+
+      twminfo("Position (%d,%d)->(%d,%d)\n",
+              oldPos.x, oldPos.y, newPos.x, newPos.y);
+
+      if (newPos.x != oldPos.x || newPos.y != oldPos.y)
+        {
+          if (!setFramePosition(&newPos))
+            {
+              twmerr("ERROR: setFramePosition failed\n");
+              return false;
+            }
+
+          m_nxWin->synchronize();
+        }
+
+      return true;
     }
 
   return false;
@@ -1429,13 +1809,16 @@ bool CWindow::windowDrag(FAR struct SEventMsg *eventmsg)
  * Handle the TOOLBAR_UNGRAB event.  The corresponds to a mouse
  * left button release while in the grabbed state
  *
- * @param eventmsg.  The received NxWidget event message.
+ * @param eventmsg.  The received NxWidget event message in window relative
+ *   coordinates.
  * @return True if the message was properly handled.  false is
  *   return on any failure.
  */
 
 bool CWindow::toolbarUngrab(FAR struct SEventMsg *eventmsg)
 {
+  twminfo("UNGRAB (%d,%d)\n", eventmsg->pos.x, eventmsg->pos.y);
+
   // One last position update
 
   if (!windowDrag(eventmsg))
@@ -1445,17 +1828,22 @@ bool CWindow::toolbarUngrab(FAR struct SEventMsg *eventmsg)
 
   // Indicate no longer dragging
 
-  m_drag = false;
+  m_dragging = false;
 
   // No longer modal
 
   m_modal = false;
   m_nxWin->modal(false);
 
+#ifdef CONFIG_TWM4NX_MOUSE
   // Restore the normal cursor image
 
   m_twm4nx->setCursorImage(&CONFIG_TWM4NX_CURSOR_IMAGE);
-  return true;
+#endif
+
+  // Restore normal application event handling.
+
+  return m_windowEvent->configureEvents(m_appEvents);
 }
 
 /**
@@ -1490,6 +1878,14 @@ void CWindow::cleanup(void)
       m_tbTitle = (FAR NXWidgets::CLabel *)0;
     }
 
+  // Delete the toolbar
+
+  if (m_toolbar != (FAR NXWidgets::CNxToolbar *)0)
+    {
+      delete m_toolbar;
+      m_toolbar  = (FAR NXWidgets::CNxToolbar *)0;
+    }
+
   // Delete the window
 
   if (m_nxWin != (FAR NXWidgets::CNxTkWindow *)0)
@@ -1511,12 +1907,50 @@ void CWindow::cleanup(void)
       delete m_iconBitMap;
       m_iconBitMap  = (FAR NXWidgets::CRlePaletteBitmap *)0;
     }
+}
 
-  // Free memory
+/////////////////////////////////////////////////////////////////////////////
+// Public Functions
+/////////////////////////////////////////////////////////////////////////////
 
-  if (m_name != (FAR char *)0)
-    {
-      std::free(m_name);
-      m_name = (FAR char *)0;
-    }
+namespace Twm4Nx
+{
+  /**
+   * Return the minimum width of a toolbar window.  If the window is
+   * resized smaller than this width, then the items in the toolbar will
+   * overlap.
+   *
+   * @param twm4nx The Twm4Nx session object
+   * @param title The window title string
+   * @param flags Window toolbar properties
+   * @return The minimum recommended window width.
+   */
+
+  nxgl_coord_t minimumToolbarWidth(FAR CTwm4Nx *twm4nx,
+                                   FAR const NXWidgets::CNxString &title,
+                                   uint8_t flags)
+  {
+    // Get the width of the title string
+
+    FAR CFonts *fonts = twm4nx->getFonts();
+    FAR NXWidgets::CNxFont *titleFont = fonts->getTitleFont();
+
+    nxgl_coord_t tbWidth = titleFont->getStringWidth(title) +
+                           CONFIG_TWM4NX_TOOLBAR_HSPACING;
+
+    for (int btindex = 0; btindex < NTOOLBAR_BUTTONS; btindex++)
+      {
+        // Check if this button is omitted by toolbar customizations
+
+        if ((flags & (1 << btindex)) == 0)
+          {
+            // Add the button image width
+
+            tbWidth += GToolBarInfo[btindex].bitmap->width +
+                       CONFIG_TWM4NX_TOOLBAR_HSPACING;
+          }
+      }
+
+    return tbWidth;
+  }
 }

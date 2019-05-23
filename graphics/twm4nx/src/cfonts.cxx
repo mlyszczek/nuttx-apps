@@ -11,6 +11,8 @@
 //   Copyright 1988 by Evans & Sutherland Computer Corporation,
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -156,7 +158,7 @@ bool CFonts::initialize(void)
     }
 
   m_iconManagerFont =
-    new NXWidgets::CNxFont((enum nx_fontid_e)CONFIG_TWM4NX_ICONMGR_SIZEFONTID,
+    new NXWidgets::CNxFont((enum nx_fontid_e)CONFIG_TWM4NX_ICONMGR_FONTID,
                            CONFIG_TWM4NX_ICONMGR_FONTCOLOR,
                            CONFIG_TWM4NX_TRANSPARENT_COLOR);
   if (m_iconManagerFont == (FAR NXWidgets::CNxFont *)0)

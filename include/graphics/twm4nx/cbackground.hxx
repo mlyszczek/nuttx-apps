@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/cbackground.hxx
+// apps/include/graphics/twm4nx/cbackground.hxx
 // Manage background image
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -43,6 +43,8 @@
 
 #include <nuttx/config.h>
 
+#include <mqueue.h>
+
 #include "graphics/nxwidgets/nxconfig.hxx"
 #include "graphics/nxwidgets/cnxwindow.hxx"
 #include "graphics/nxwidgets/cnxserver.hxx"
@@ -75,8 +77,11 @@ namespace Twm4Nx
   {
     protected:
       FAR CTwm4Nx                  *m_twm4nx;     /**< Cached CTwm4Nx instance */
+      mqd_t                         m_eventq;     /**< NxWidget event message queue */
       FAR NXWidgets::CBgWindow     *m_backWindow; /**< The background window */
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
       FAR NXWidgets::CImage        *m_backImage;  /**< The background image */
+#endif
 
       /**
        * Create the background window.
@@ -93,6 +98,7 @@ namespace Twm4Nx
 
       bool createBackgroundWidget(void);
 
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
       /**
        * Create the background image.
        *
@@ -101,16 +107,22 @@ namespace Twm4Nx
        */
 
       bool createBackgroundImage(FAR const struct NXWidgets::SRlePaletteBitmap *sbitmap);
+#endif
 
       /**
-       * Handle the background window redraw.
+       * Bring up the main menu (if it is not already up).
        *
-       * @param nxRect The region in the window to be redrawn
-       * @param more More redraw requests will follow
-       * @return true on success
+       * @param pos The window click position.
+       * @param buttons The set of mouse button presses.
        */
 
-       bool redrawBackgroundWindow(FAR const struct nxgl_rect_s *rect, bool more);
+      void showMainMenu(FAR struct nxgl_point_s &pos, uint8_t buttons);
+
+      /**
+       * Release resources held by the background.
+       */
+
+      void cleanup(void);
 
     public:
       /**
@@ -156,6 +168,29 @@ namespace Twm4Nx
        */
 
       void getDisplaySize(FAR struct nxgl_size_s &size);
+
+      /**
+       * Handle the background window redraw.
+       *
+       * @param nxRect The region in the window to be redrawn
+       * @param more More redraw requests will follow
+       * @return true on success
+       */
+
+      bool redrawBackgroundWindow(FAR const struct nxgl_rect_s *rect, bool more);
+
+      /**
+       * Check if the region within 'bounds' collides with any other reserved
+       * region on the desktop.  This is used for icon placement.
+       *
+       * @param iconBounds The candidate bounding box
+       * @param collision The bounding box of the reserved region that the
+       *   candidate collides with
+       * @return Returns true if there is a collision
+       */
+
+      bool checkCollision(FAR const struct nxgl_rect_s &bounds,
+                          FAR struct nxgl_rect_s &collision);
 
       /**
        * Handle EVENT_BACKGROUND events.

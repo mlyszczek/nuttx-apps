@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/ctwm4nx.hxx
+// apps/include/graphics/twm4nx/ctwm4nx.hxx
 // twm include file
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -11,6 +11,8 @@
 //   Copyright 1988 by Evans & Sutherland Computer Corporation,
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -64,15 +66,7 @@
 #include "graphics/nxwidgets/cimage.hxx"
 
 #include "graphics/twm4nx/cwindowevent.hxx"
-#include "graphics/twm4nx/twm4nx_widgetevents.hxx"
-
-/////////////////////////////////////////////////////////////////////////////
-// Pre-processor Definitions
-/////////////////////////////////////////////////////////////////////////////
-
-// Defines for zooming/unzooming
-
-#define ZOOM_NONE 0
+#include "graphics/twm4nx/twm4nx_events.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
 // Implementation Classes
@@ -83,10 +77,10 @@ namespace Twm4Nx
   class  CInput;         // Forward reference
   class  CBackground;    // Forward reference
   class  CWidgetEvent;   // Forward reference
-  class  CIcon;          // Forward reference
   class  CIconMgr;       // Forward reference
   class  CFonts;         // Forward reference
   class  CWindow;        // Forward reference
+  class  CMainMenu;      // Forward reference
   class  CResize;        // Forward reference
   class  CWindowFactory; // Forward reference
   class  CResize;        // Forward reference
@@ -111,10 +105,10 @@ namespace Twm4Nx
       FAR char                    *m_queueName;   /**< NxWidget event queue name */
       mqd_t                        m_eventq;      /**< NxWidget event message queue */
       FAR CBackground             *m_background;  /**< Background window management */
-      FAR CIcon                   *m_icon;        /**< The cached Cicon instance */
       FAR CIconMgr                *m_iconmgr;     /**< The Default icon manager */
       FAR CWindowFactory          *m_factory;     /**< The cached CWindowFactory instance */
       FAR CFonts                  *m_fonts;       /**< The cached Cfonts instance */
+      FAR CMainMenu               *m_mainMenu;    /**< The cached CMainMenu instance */
       FAR CResize                 *m_resize;      /**< The cached CResize instance */
 
 #if !defined(CONFIG_TWM4NX_NOKEYBOARD) || !defined(CONFIG_TWM4NX_NOMOUSE)
@@ -175,17 +169,27 @@ namespace Twm4Nx
        ~CTwm4Nx(void);
 
        /**
-        * This is the main, controlling thread of the window manager.  It is
-        * called only from the extern "C" main() entry point.
+        * Perform initialization additional, post-construction initialization
+        * that may fail.  This initialization logic fully initialized the
+        * Twm4Nx session.  Upon return, the session is ready for use.
         *
-        * NOTE: In the event of truly abnormal conditions, this function will
-        * not return.  It will exit via the abort() method.
+        * After Twm4Nx is initialized, external applications should register
+        * themselves into the Main Menu in order to be a part of the desktop.
         *
-        * @return True if the window manager was terminated properly.  false is
-        *   return on any failure.
+        * @return True if the Twm4Nx was properly initialized.  false is
+        * returned on any failure.
         */
 
-       bool run(void);
+       bool initialize(void);
+
+       /**
+        * This is the main, event loop of the Twm4Nx session.
+        *
+        * @return True if the Twm4Nxr was terminated noramly.  false is returned
+        * on any failure.
+        */
+
+       bool eventLoop(void);
 
        /**
         * Return a reference to the randomly generated event messageq queue
@@ -251,17 +255,6 @@ namespace Twm4Nx
        }
 
       /**
-       * Return the session's CIcon instance.
-       *
-       * @return The contained instance of the Icon class for this session.
-       */
-
-       inline FAR CIcon *getIcon(void)
-       {
-         return m_icon;
-       }
-
-      /**
        * Return the session's Icon Manager instance.
        *
        * @return The contained instance of the Icon Manager for this session.
@@ -275,7 +268,8 @@ namespace Twm4Nx
       /**
        * Return the session's CWindowFactory instance.
        *
-       * @return The contained instance of the CWindow instance this session.
+       * @return The contained instance of the CWindow instance this
+       *   session.
        */
 
        inline FAR CWindowFactory *getWindowFactory(void)
@@ -286,12 +280,25 @@ namespace Twm4Nx
       /**
        * Return the session's CFonts instance.
        *
-       * @return The contained instance of the CMenus instance for this session.
+       * @return The contained instance of the CFonts instance for this
+       *   session.
        */
 
        inline FAR CFonts *getFonts(void)
        {
          return m_fonts;
+       }
+
+      /**
+       * Return the session's CMainMenu instance.
+       *
+       * @return The contained instance of the CMainMenu instance for this
+       *   session.
+       */
+
+       inline FAR CMainMenu *getMainMenu(void)
+       {
+         return m_mainMenu;
        }
 
       /**
@@ -305,6 +312,20 @@ namespace Twm4Nx
        {
          return m_resize;
        }
+
+#if !defined(CONFIG_TWM4NX_NOKEYBOARD) || !defined(CONFIG_TWM4NX_NOMOUSE)
+      /**
+       * Return the session's CInput instance.
+       *
+       * @return The contained instance of the CInput instance for this
+       *   session.
+       */
+
+       inline FAR CInput *getInput(void)
+       {
+         return m_input;
+       }
+#endif
 
       /**
        * Dispatch NxWidget-related events.  Normally used only internally

@@ -63,6 +63,7 @@
 namespace NXWidgets
 {
   class IBitmap;                        // Forward reference
+  class CNxString;                      // Forward reference
   class CNxWidget;                      // Forward reference
   class CWidgetStyle;                   // Forward reference
   class CWidgetControl;                 // Forward reference
@@ -76,7 +77,92 @@ namespace NXWidgets
 
 namespace Twm4Nx
 {
-  class FAR CTwm4Nx;                    // Forward reference
+  class CTwm4Nx;                        // Forward reference
+  class CWindow;                        // Forward reference
+
+  /**
+   * Self-dragging versions of CLabel and CImage
+   */
+
+  class CIconLabel : public NXWidgets::CLabel
+  {
+    public:
+
+      /**
+       * Constructor for a label containing a string.
+       *
+       * @param pWidgetControl The controlling widget for the display
+       * @param x The x coordinate of the text box, relative to its parent.
+       * @param y The y coordinate of the text box, relative to its parent.
+       * @param width The width of the textbox.
+       * @param height The height of the textbox.
+       * @param text Pointer to a string to display in the textbox.
+       * @param style The style that the button should use.  If this is not
+       *        specified, the button will use the global default widget
+       *        style.
+       */
+
+      inline CIconLabel(NXWidgets::CWidgetControl *pWidgetControl,
+                        nxgl_coord_t x, nxgl_coord_t y,
+                        nxgl_coord_t width, nxgl_coord_t height,
+                        const NXWidgets::CNxString &text,
+                        NXWidgets::CWidgetStyle *style = (NXWidgets::CWidgetStyle *)0) :
+      NXWidgets::CLabel(pWidgetControl, x, y, width, height, text, style)
+      {
+      }
+
+      /**
+       * Called when the widget is clicked.
+       *
+       * @param x The x coordinate of the click.
+       * @param y The y coordinate of the click.
+       */
+
+      inline void onClick(nxgl_coord_t x, nxgl_coord_t y)
+      {
+        startDragging(x, y);
+      }
+  };
+
+  class CIconImage : public NXWidgets::CImage
+  {
+    public:
+
+      /**
+       * Constructor for an image.
+       *
+       * @param pWidgetControl The controlling widget for the display
+       * @param x The x coordinate of the image box, relative to its parent.
+       * @param y The y coordinate of the image box, relative to its parent.
+       * @param width The width of the textbox.
+       * @param height The height of the textbox.
+       * @param bitmap The source bitmap image.
+       * @param style The style that the widget should use.  If this is not
+       *        specified, the button will use the global default widget
+       *        style.
+       */
+
+      inline CIconImage(NXWidgets::CWidgetControl *pWidgetControl,
+                        nxgl_coord_t x, nxgl_coord_t y,
+                        nxgl_coord_t width, nxgl_coord_t height,
+                        FAR NXWidgets::IBitmap *bitmap,
+                        NXWidgets::CWidgetStyle *style = (NXWidgets::CWidgetStyle *)0) :
+      NXWidgets::CImage(pWidgetControl, x, y, width, height, bitmap, style)
+      {
+      }
+
+      /**
+       * Called when the widget is clicked.
+       *
+       * @param x The x coordinate of the click.
+       * @param y The y coordinate of the click.
+       */
+
+      inline void onClick(nxgl_coord_t x, nxgl_coord_t y)
+      {
+        startDragging(x, y);
+      }
+  };
 
   /**
    * Container class that holds the Icon image and table widgets
@@ -87,15 +173,30 @@ namespace Twm4Nx
   {
     protected:
       FAR CTwm4Nx                   *m_twm4nx;         /**< Cached Twm4Nx session */
+      FAR CWindow                   *m_parent;         /**< The parent window (for de-iconify) */
       mqd_t                          m_eventq;         /**< NxWidget event message queue */
       FAR NXWidgets::CWidgetControl *m_widgetControl;  /**< The controlling widget */
 
       // Dragging
 
-      struct nxgl_point_s            m_dragPos;        /**< Last mouse position */
+      struct nxgl_point_s            m_dragPos;        /**< Last good icon position */
       struct nxgl_point_s            m_dragOffset;     /**< Offset from mouse to window origin */
       struct nxgl_size_s             m_dragCSize;      /**< The grab cursor size */
-      bool                           m_drag;           /**< Drag in-progress */
+      bool                           m_dragging;       /**< Drag in-progress */
+      bool                           m_collision;      /**< Current position collides */
+      bool                           m_moved;          /**< Icon has been moved */
+
+      /**
+       * Called when the widget is clicked.
+       *
+       * @param x The x coordinate of the click.
+       * @param y The y coordinate of the click.
+       */
+
+      inline void onClick(nxgl_coord_t x, nxgl_coord_t y)
+      {
+        startDragging(x, y);
+      }
 
       /**
        * After the widget has been grabbed, it may be dragged then dropped,
@@ -225,12 +326,13 @@ namespace Twm4Nx
        * Perform widget initialization that could fail and so it not appropriate
        * for the constructor
        *
+       * @param parent The parent window.  Needed for de-iconification.
        * @param ibitmap The bitmap image representing the icon
        * @param title The icon title string
        * @return True is returned if the widget is successfully initialized.
        */
 
-      bool initialize(FAR NXWidgets::IBitmap *ibitmap,
+      bool initialize(FAR CWindow *parent, FAR NXWidgets::IBitmap *ibitmap,
                       FAR const NXWidgets::CNxString &title);
 
       /**

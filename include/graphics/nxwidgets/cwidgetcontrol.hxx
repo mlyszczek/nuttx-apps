@@ -58,14 +58,6 @@
 #include "graphics/nxwidgets/tnxarray.hxx"
 
 /****************************************************************************
- * Pre-Processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Public Data
- ****************************************************************************/
-
-/****************************************************************************
  * Implementation Classes
  ****************************************************************************/
 
@@ -253,9 +245,10 @@ namespace NXWidgets
      * @param y Click ycoordinate.
      * @param widget. Specific widget to poll.  Use NULL to run the
      *    all widgets in the window.
+     * @return True means an interesting mouse event occurred
      */
 
-    void handleLeftClick(nxgl_coord_t x, nxgl_coord_t y, CNxWidget *widget);
+    bool handleLeftClick(nxgl_coord_t x, nxgl_coord_t y, CNxWidget *widget);
 
     /**
      * Get the index of the specified controlled widget.

@@ -11,6 +11,8 @@
 //   Copyright 1988 by Evans & Sutherland Computer Corporation,
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -55,15 +57,13 @@
 #include <cstring>
 #include <cerrno>
 
-#include <sys/boardctl.h>
 #include <semaphore.h>
 
 #include <nuttx/semaphore.h>
 #include <nuttx/nx/nx.h>
 #include <nuttx/nx/nxglib.h>
 
-#include "platform/cxxinitialize.h"
-#include "netutils/netinit.h"
+// Core Twm4Nx Definitions
 
 #include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/ctwm4nx.hxx"
@@ -72,32 +72,13 @@
 #include "graphics/twm4nx/cwindowfactory.hxx"
 #include "graphics/twm4nx/cwindowevent.hxx"
 #include "graphics/twm4nx/cinput.hxx"
-#include "graphics/twm4nx/cicon.hxx"
 #include "graphics/twm4nx/ciconwidget.hxx"
 #include "graphics/twm4nx/ciconmgr.hxx"
 #include "graphics/twm4nx/cmenus.hxx"
+#include "graphics/twm4nx/cmainmenu.hxx"
 #include "graphics/twm4nx/cresize.hxx"
 #include "graphics/twm4nx/cfonts.hxx"
-#include "graphics/twm4nx/twm4nx_widgetevents.hxx"
-
-/////////////////////////////////////////////////////////////////////////////
-// Pre-processor Definitions
-/////////////////////////////////////////////////////////////////////////////
-
-#define DEFAULT_NICE_FONT "variable"
-#define DEFAULT_FAST_FONT "fixed"
-
-/////////////////////////////////////////////////////////////////////////////
-// Public Function Prototypes
-/////////////////////////////////////////////////////////////////////////////
-
-// Suppress name-mangling
-
-#ifdef BUILD_MODULE
-extern "C" int main(int argc, FAR char *argv[]);
-#else
-extern "C" int twm4nx_main(int argc, char *argv[]);
-#endif
+#include "graphics/twm4nx/twm4nx_events.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
 // Public Data
@@ -123,10 +104,10 @@ CTwm4Nx::CTwm4Nx(int display)
   m_display              = display;
   m_eventq               = (mqd_t)-1;
   m_background           = (FAR CBackground *)0;
-  m_icon                 = (FAR CIcon *)0;
   m_iconmgr              = (FAR CIconMgr *)0;
   m_factory              = (FAR CWindowFactory *)0;
   m_fonts                = (FAR CFonts *)0;
+  m_mainMenu             = (FAR CMainMenu *)0;
   m_resize               = (FAR CResize *)0;
 
 #if !defined(CONFIG_TWM4NX_NOKEYBOARD) || !defined(CONFIG_TWM4NX_NOMOUSE)
@@ -144,17 +125,18 @@ CTwm4Nx::~CTwm4Nx(void)
 }
 
 /**
- * This is the main, controlling thread of the window manager.  It is
- * called only from the extern "C" main() entry point.
+ * Perform initialization additional, post-construction initialization
+ * that may fail.  This initialization logic fully initialized the
+ * Twm4Nx session.  Upon return, the session is ready for use.
  *
- * NOTE: In the event of truly abnormal conditions, this function will
- * not return.  It will exit via the abort() method.
+ * After Twm4Nx is initialized, external applications should register
+ * themselves into the Main Menu in order to be a part of the desktop.
  *
- * @return True if the window manager was terminated properly.  false is
- *   return on any failure.
+ * @return True if the Twm4Nx was properly initialized.  false is
+ * returned on any failure.
  */
 
-bool CTwm4Nx::run(void)
+bool CTwm4Nx::initialize(void)
 {
   // Open a message queue to receive NxWidget-related events.  We need to
   // do this early so that the messasge queue name will be available to
@@ -175,12 +157,6 @@ bool CTwm4Nx::run(void)
       cleanup();
       return false;
     }
-
-#if defined(CONFIG_HAVE_CXX) && defined(CONFIG_HAVE_CXXINITIALIZE)
-  // Call all C++ static constructors
-
-  up_cxxinitialize();
-#endif
 
   // Connect to the NX server
 
@@ -219,7 +195,7 @@ bool CTwm4Nx::run(void)
               (unsigned int)m_displaySize.h <= INT16_MAX);
 
   m_maxWindow.w = INT16_MAX - m_displaySize.w;
-  m_maxWindow.h = INT16_MAX - m_displaySize.w;
+  m_maxWindow.h = INT16_MAX - m_displaySize.h;
 
 #if !defined(CONFIG_TWM4NX_NOKEYBOARD) || !defined(CONFIG_TWM4NX_NOMOUSE)
   // Create the keyboard/mouse input device thread
@@ -244,7 +220,7 @@ bool CTwm4Nx::run(void)
   // factory is needed by the Icon Manager which is instantiated below.
 
   m_factory = new CWindowFactory(this);
-  if (m_factory == (CWindowFactory *)0)
+  if (m_factory == (FAR CWindowFactory *)0)
     {
       cleanup();
       return false;
@@ -254,7 +230,7 @@ bool CTwm4Nx::run(void)
   // need by the Icon Manager which is instantiated next.
 
   m_fonts = new CFonts(this);
-  if (m_fonts == (CFonts *)0)
+  if (m_fonts == (FAR CFonts *)0)
     {
       cleanup();
       return false;
@@ -270,8 +246,8 @@ bool CTwm4Nx::run(void)
 
   // Create the Icon Manager
 
-  m_iconmgr = new CIconMgr(this, 4);
-  if (m_iconmgr == (CIconMgr *)0)
+  m_iconmgr = new CIconMgr(this, CONFIG_TWM4NX_ICONMGR_NCOLUMNS);
+  if (m_iconmgr == (FAR CIconMgr *)0)
     {
       cleanup();
       return false;
@@ -283,10 +259,31 @@ bool CTwm4Nx::run(void)
       return false;
     }
 
-  // Cache a CIcon instance for use across the session
+  // Create and initialize a CMainMenu instance for use across the session
 
-  m_icon = new CIcon(this);
-  if (m_icon == (CIcon *)0)
+  m_mainMenu = new CMainMenu(this);
+  if (m_mainMenu == (FAR CMainMenu *)0)
+    {
+      cleanup();
+      return false;
+    }
+
+  if (!m_mainMenu->initialize())
+    {
+      cleanup();
+      return false;
+    }
+
+  // Now, complete the initialization of some preceding instances that
+  // depend on the Main Menu being in place
+
+  if (!m_factory->addMenuItems())
+    {
+      cleanup();
+      return false;
+    }
+
+  if (!m_iconmgr->addMenuItems())
     {
       cleanup();
       return false;
@@ -295,7 +292,7 @@ bool CTwm4Nx::run(void)
   // Cache a CResize instance for use across the session
 
   m_resize = new CResize(this);
-  if (m_resize == (CResize *)0)
+  if (m_resize == (FAR CResize *)0)
     {
       cleanup();
       return false;
@@ -307,6 +304,18 @@ bool CTwm4Nx::run(void)
       return false;
     }
 
+  return true;
+}
+
+/**
+ * This is the main, event loop of the Twm4Nx session.
+ *
+ * @return True if the Twm4Nxr was terminated noramly.  false is returned
+ * on any failure.
+ */
+
+bool CTwm4Nx::eventLoop(void)
+{
   // Enter the event loop
 
   twminfo("Entering event loop\n");
@@ -329,13 +338,20 @@ bool CTwm4Nx::run(void)
           return false;
         }
 
-      // Dispatch the new event
+      // If we are resizing, then drop all non-critical events (of course,
+      // all resizing events must be critical)
 
-      if (!dispatchEvent(&u.eventmsg))
+      if (!m_resize->resizing() || EVENT_ISCRITICAL(u.eventmsg.eventID))
         {
-          twmerr("ERROR: dispatchEvent failed\n");
-          cleanup();
-          return false;
+          // Dispatch the new event
+
+          if (!dispatchEvent(&u.eventmsg))
+            {
+              twmerr("ERROR: dispatchEvent() failed, eventID=%u\n",
+                     u.eventmsg.eventID);
+              cleanup();
+              return false;
+            }
         }
     }
 
@@ -458,6 +474,12 @@ bool CTwm4Nx::dispatchEvent(FAR struct SEventMsg *eventmsg)
         }
         break;
 
+      case EVENT_RECIPIENT_MAINMENU:   // Main menu related event
+        {
+          ret = m_mainMenu->event(eventmsg);
+        }
+        break;
+
       case EVENT_RECIPIENT_WINDOW:     // Window related event
       case EVENT_RECIPIENT_TOOLBAR:    // Toolbar related event
       case EVENT_RECIPIENT_BORDER:     // Window border related event
@@ -474,8 +496,9 @@ bool CTwm4Nx::dispatchEvent(FAR struct SEventMsg *eventmsg)
           // fixed, a priori endpoint.  Rather, the endpoint must be
           // provided in the 'handler' field of the message
 
-          DEBUGASSERT(eventmsg->handler != (FAR CTwm4NxEvent *)0);
-          ret = eventmsg->handler->event(eventmsg);
+          DEBUGASSERT(eventmsg->handler != (FAR void *)0);
+          FAR CTwm4NxEvent *handler = (FAR CTwm4NxEvent *)eventmsg->handler;
+          ret = handler->event(eventmsg);
         }
         break;
 
@@ -545,6 +568,14 @@ void CTwm4Nx::cleanup()
       m_factory = (CWindowFactory *)0;
     }
 
+  // Free the session CMainMenu instance
+
+  if (m_mainMenu != (CMainMenu *)0)
+    {
+      delete m_mainMenu;
+      m_mainMenu = (CMainMenu *)0;
+    }
+
   // Free the session CResize instance
 
   if (m_resize != (CResize *)0)
@@ -556,102 +587,3 @@ void CTwm4Nx::cleanup()
   CNxServer::disconnect();
 }
 
-/////////////////////////////////////////////////////////////////////////////
-// Public Functions
-/////////////////////////////////////////////////////////////////////////////
-
-/////////////////////////////////////////////////////////////////////////////
-// Name: main/twm4nx_main
-//
-// Description:
-//    Start of TWM
-//
-/////////////////////////////////////////////////////////////////////////////
-
-#ifdef BUILD_MODULE
-int main(int argc, FAR char *argv[])
-#else
-int twm4nx_main(int argc, char *argv[])
-#endif
-{
-  int display = 0;
-
-  for (int i = 1; i < argc; i++)
-    {
-      if (argv[i][0] == '-')
-        {
-          switch (argv[i][1])
-            {
-            case 'd':          // -display <number>
-              if (std::strcmp(&argv[i][1], "display"))
-                {
-                  goto usage;
-                }
-
-              if (++i >= argc)
-                {
-                  goto usage;
-                }
-
-              display = atoi(argv[i]);
-              continue;
-            }
-        }
-
-    usage:
-      twmerr("Usage:  %s [-display <number>]\n", argv[0]);
-      return EXIT_FAILURE;
-    }
-
-  int ret;
-
-#if defined(CONFIG_TWM4NX_ARCHINIT) && defined(CONFIG_LIB_BOARDCTL) && \
-   !defined(CONFIG_BOARD_LATE_INITIALIZE)
-  // Should we perform board-specific initialization?  There are two ways
-  // that board initialization can occur:  1) automatically via
-  // board_late_initialize() during bootup if CONFIG_BOARD_LATE_INITIALIZE, or
-  // 2) here via a call to boardctl() if the interface is enabled
-  // (CONFIG_LIB_BOARDCTL=y).  board_early_initialize() is also possibility,
-  // although less likely.
-
-  ret = boardctl(BOARDIOC_INIT, 0);
-  if (ret < 0)
-    {
-      twmerr("ERROR: boardctl(BOARDIOC_INIT) failed: %d\n", errno);
-      return EXIT_FAILURE;
-    }
-#endif
-
-#ifdef CONFIG_TWM4NX_NETINIT
-  /* Bring up the network */
-
-  ret = netinit_bringup();
-  if (ret < 0)
-    {
-      twmerr("ERROR: netinit_bringup() failed: %d\n", ret);
-      return EXIT_FAILURE;
-    }
-#endif
-
-  UNUSED(ret);
-
-  /* Create an instance of CTwm4Nx and and run it */
-
-  FAR CTwm4Nx *twm4nx = new CTwm4Nx(display);
-  if (twm4nx == (FAR CTwm4Nx *)0)
-    {
-      twmerr("ERROR: Failed to instantiate CTwm4Nx\n");
-      return EXIT_FAILURE;
-    }
-
-  // Start the window manager
-
-  bool success = twm4nx->run();
-  if (!success)
-    {
-      twmerr(" ERROR: Terminating due to failure\n");
-      return EXIT_FAILURE;
-    }
-
-  return EXIT_SUCCESS;
-}

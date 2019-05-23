@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/ciconmgr.hxx
+// apps/include/graphics/twm4nx/ciconmgr.hxx
 // Icon Manager includes
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -10,6 +10,8 @@
 //   Copyright 1989,1998  The Open Group
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -52,7 +54,9 @@
 
 #include <nuttx/nx/nxglib.h>
 #include "graphics/twm4nx/cwindow.hxx"
-#include "graphics/twm4nx/ctwm4nxevent.hxx"
+#include "graphics/twm4nx/cmainmenu.hxx"
+#include "graphics/twm4nx/iapplication.hxx"
+#include "graphics/twm4nx/twm4nx_events.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
 // Implementation Classes
@@ -60,52 +64,56 @@
 
 namespace NXWidgets
 {
-  class  CNxTkWindow;                      // Forward reference
-  class  CButtonArray;                     // Forward reference
-  class  CWidgetEventHandler;              // Forward reference
-  class  CWidgetEventArgs;                 // Forward reference
-  struct SRlePaletteBitmap;                // Forward reference
+  class  CNxTkWindow;                              // Forward reference
+  class  CButtonArray;                             // Forward reference
+  class  CWidgetEventHandler;                      // Forward reference
+  class  CWidgetEventArgs;                         // Forward reference
+  struct SRlePaletteBitmap;                        // Forward reference
 }
 
 namespace Twm4Nx
 {
   struct SWindowEntry
   {
-    FAR struct SWindowEntry *flink;
-    FAR struct SWindowEntry *blink;
-    FAR CWindow *cwin;
-    FAR CIconMgr *iconmgr;
-    nxgl_point_s pos;
-    nxgl_size_s size;
-    int row;
-    int col;
-    bool active;
-    bool down;
+    FAR struct SWindowEntry *flink;                 /**< Forward link to next window entry */
+    FAR struct SWindowEntry *blink;                 /**< Backward link to previous window entry */
+    FAR CWindow *cwin;                              /**< The window payload */
+    int row;                                        /**< Y position in the button array */
+    int column;                                     /**< X position in the button array */
   };
 
-  class CIconMgr : protected NXWidgets::CWidgetEventHandler, public CTwm4NxEvent
+  class CIconMgr : protected NXWidgets::CWidgetEventHandler,
+                   protected IApplication,
+                   public CTwm4NxEvent
   {
     private:
 
       FAR CTwm4Nx                    *m_twm4nx;     /**< Cached Twm4Nx session */
       mqd_t                           m_eventq;     /**< NxWidget event message queue */
+      NXWidgets::CNxString            m_name;       /**< The Icon Manager name */
       FAR struct SWindowEntry        *m_head;       /**< Head of the window list */
       FAR struct SWindowEntry        *m_tail;       /**< Tail of the window list */
-      FAR struct SWindowEntry        *m_active;     /**< The active entry */
       FAR struct CWindow             *m_window;     /**< Parent window */
-      FAR NXWidgets::CButtonArray    *m_buttons;    /**< The cotained button array */
-      uint8_t                         m_maxColumns; /**< Max columns per row */
+      FAR NXWidgets::CButtonArray    *m_buttons;    /**< The contained button array */
+      uint16_t                        m_nWindows;   /**< The number of windows in the icon mgr. */
+      uint8_t                         m_nColumns;   /**< Fixed number of columns per row */
       uint8_t                         m_nrows;      /**< Number of rows in the button array */
-      uint8_t                         m_ncolumns;   /**< Number of columns in the button array */
-      unsigned int                    m_nWindows;   /**< The number of windows in the icon mgr. */
 
       /**
-       * Return the height of one row
+       * Return the width of one button
        *
-       * @return The height of one row
+       * @return The width of one button
        */
 
-      nxgl_coord_t getRowHeight(void);
+      inline nxgl_coord_t getButtonWidth(void);
+
+      /**
+       * Return the height of one button
+       *
+       * @return The height of one button
+       */
+
+      inline nxgl_coord_t getButtonHeight(void);
 
       /**
        * Create and initialize the icon manager window
@@ -120,6 +128,12 @@ namespace Twm4Nx
        */
 
       bool createButtonArray(void);
+
+      /**
+       * Label each button with the window name
+       */
+
+      void labelButtons(void);
 
       /**
        * Put an allocated entry into an icon manager
@@ -139,20 +153,13 @@ namespace Twm4Nx
       void removeEntry(FAR struct SWindowEntry *wentry);
 
       /**
-       * Set active window
+       * Find an entry in the icon manager
        *
-       * @param wentry Window to become active.
+       *  @param cwin The window to find
+       *  @return The incon manager entry (unless an error occurred)
        */
 
-      void active(FAR struct SWindowEntry *wentry);
-
-      /**
-       * Set window inactive
-       *
-       * @param wentry windows to become inactive.
-       */
-
-      void inactive(FAR struct SWindowEntry *wentry);
+      FAR struct SWindowEntry *findEntry(FAR CWindow *cwin);
 
       /**
        * Free window list entry.
@@ -161,12 +168,60 @@ namespace Twm4Nx
       void freeWEntry(FAR struct SWindowEntry *wentry);
 
       /**
-       * Handle a widget action event.  This will be a button pre-release event.
+       * Handle a widget action event, overriding the CWidgetEventHandler
+       * method.  This will indicate a button pre-release event.
        *
        * @param e The event data.
        */
 
       void handleActionEvent(const NXWidgets::CWidgetEventArgs &e);
+
+      /**
+       * Return the Main Menu item string.  This overrides the method from
+       * IApplication
+       *
+       * @param name The name of the application.
+       */
+
+      inline NXWidgets::CNxString getName(void)
+      {
+        return m_name;
+      }
+
+      /**
+       * There is no sub-menu for this Main Menu item.  This overrides
+       * the method from IApplication.
+       *
+       * @return This implementation will always return a null value.
+       */
+
+      inline FAR CMenus *getSubMenu(void)
+      {
+        return (FAR CMenus *)0;
+      }
+
+      /**
+       * There is no custom event handler.  We use the common event handler.
+       *
+       * @return.  null is always returned in this impementation.
+       */
+
+      inline FAR CTwm4NxEvent *getEventHandler(void)
+      {
+        return (FAR CTwm4NxEvent *)0;
+      }
+
+      /**
+       * Return the Twm4Nx event that will be generated when the Main Menu
+       * item is selected.
+       *
+       * @return. This function always returns EVENT_ICONMGR_DEICONIFY.
+       */
+
+      inline uint16_t getEvent(void)
+      {
+        return EVENT_ICONMGR_DEICONIFY;
+      }
 
     public:
 
@@ -186,28 +241,40 @@ namespace Twm4Nx
       ~CIconMgr(void);
 
       /**
-       * Create and initialize the icon manager window
+       * Create and initialize the icon manager window. 
        *
        * @param name  The prefix for this icon manager name
+       * @return True on success
        */
 
       bool initialize(FAR const char *prefix);
 
       /**
-       * Add a window to an the icon manager
+       * Add Icon Manager menu items to the Main menu.  This is really a
+       * part of the logic that belongs in initialize() but cannot be
+       * executed in that context because it assumes that the Main Menu
+       * logic is ready.
        *
-       *  @param win the TWM window structure
+       * @return True on success
        */
 
-      bool add(FAR CWindow *win);
+      bool addMenuItems(void);
+
+      /**
+       * Add a window to an the icon manager
+       *
+       *  @param cwin the TWM window structure
+       */
+
+      bool addWindow(FAR CWindow *cwin);
 
       /**
        * Remove a window from the icon manager
        *
-       * @param win the TWM window structure
+       * @param cwin the TWM window structure
        */
 
-      void remove(FAR struct SWindow *win);
+      void removeWindow(FAR CWindow *cwin);
 
       /**
        * Hide the icon manager
@@ -225,18 +292,9 @@ namespace Twm4Nx
        * Get the number of columns
        */
 
-      inline unsigned int getDisplayColumns(void)
-      {
-         return m_maxColumns;
-      }
-
-      /**
-       * Get the current column
-       */
-
       inline unsigned int getNumberOfColumns(void)
       {
-         return m_ncolumns;
+         return m_nColumns;
       }
 
       /**
@@ -249,10 +307,12 @@ namespace Twm4Nx
       }
 
       /**
-       * Pack the icon manager windows following an addition or deletion
+       * Resize the button array, possibly adjusting the window height
+       *
+       * @return True if the button array was resized successfully
        */
 
-      void pack(void);
+      bool resizeIconManager(void);
 
       /**
        * sort the windows

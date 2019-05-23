@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/cwindowfactory.hxx
+// apps/include/graphics/twm4nx/cwindowfactory.hxx
 // A collection of Window Helpers:   Add a new window, put the titlebar and
 // other stuff around the window
 //
@@ -12,6 +12,8 @@
 //   Copyright 1988 by Evans & Sutherland Computer Corporation,
 //
 // Please refer to apps/twm4nx/COPYING for detailed copyright information.
+// Although not listed as a copyright holder, thanks and recognition need
+// to go to Tom LaStrange, the original author of TWM.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions
@@ -53,6 +55,7 @@
 
 #include "graphics/twm4nx/cwindow.hxx"
 #include "graphics/twm4nx/ctwm4nxevent.hxx"
+#include "graphics/twm4nx/iapplication.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
 // Implementation Classes
@@ -82,6 +85,63 @@ namespace Twm4Nx
   };
 
   /**
+   * This class is a simple implement of the interface to the Main Menu that
+   * provides the Desktop Main Menu entry.
+   */
+
+  class CDesktopItem : public IApplication
+  {
+    public:
+
+      /**
+       * Return the Main Menu item string.  This overrides the method from
+       * IApplication
+       *
+       * @param name The name of the application.
+       */
+
+      inline NXWidgets::CNxString getName(void)
+      {
+        return NXWidgets::CNxString("Desktop");
+      }
+
+      /**
+       * There is no sub-menu for this Main Menu item.  This overrides
+       * the method from IApplication.
+       *
+       * @return This implementation will always return a null value.
+       */
+
+      inline FAR CMenus *getSubMenu(void)
+      {
+        return (FAR CMenus *)0;
+      }
+
+      /**
+       * There is no custom event handler.  We use the common event handler.
+       *
+       * @return.  null is always returned in this impementation.
+       */
+
+      inline FAR CTwm4NxEvent *getEventHandler(void)
+      {
+        return (FAR CTwm4NxEvent *)0;
+      }
+
+      /**
+       * Return the Twm4Nx event that will be generated when the Main Menu
+       * item is selected.
+       *
+       * @return. This function always returns EVENT_WINDOW_DESKTOP.
+       */
+
+      inline uint16_t getEvent(void)
+      {
+        return EVENT_WINDOW_DESKTOP;
+      }
+  };
+
+  /**
    * The CWindowFactory class creates new window instances and manages some
    * things that are common to all windows.
    */
@@ -90,9 +150,10 @@ namespace Twm4Nx
   {
     private:
 
-      CTwm4Nx             *m_twm4nx;     /**< Cached Twm4Nx session */
-      struct nxgl_point_s  m_winpos;     /**< Position of next window created */
-      FAR struct SWindow  *m_windowHead; /**< List of all windows on the display */
+      CTwm4Nx             *m_twm4nx;      /**< Cached Twm4Nx session */
+      struct nxgl_point_s  m_winpos;      /**< Position of next window created */
+      FAR struct SWindow  *m_windowHead;  /**< List of windows on the display */
+      CDesktopItem         m_desktopItem; /**< For the "Desktop" Main Menu item */
 
       /**
        * Add a window container to the window list.
@@ -100,7 +161,7 @@ namespace Twm4Nx
        * @param win.  The window container to be added to the list.
        */
 
-      void addWindow(FAR struct SWindow *win);
+      void addWindowContainer(FAR struct SWindow *win);
 
       /**
        * Remove a window container from the window list.
@@ -108,7 +169,7 @@ namespace Twm4Nx
        * @param win.  The window container to be removed from the list.
        */
 
-      void removeWindow(FAR struct SWindow *win);
+      void removeWindowContainer(FAR struct SWindow *win);
 
       /**
        * Find the window container that contains the specified window.
@@ -119,6 +180,15 @@ namespace Twm4Nx
        */
 
       FAR struct SWindow *findWindow(FAR CWindow *cwin);
+
+      /**
+       * This is the function that responds to the EVENT_WINDOW_DESKTOP.  It
+       * iconifies all windows so that the desktop is visible.
+       *
+       * @return True is returned if the operation was successful.
+       */
+
+       bool showDesktop(void);
 
     public:
 
@@ -137,7 +207,21 @@ namespace Twm4Nx
       ~CWindowFactory(void);
 
       /**
+       * Add Icon Manager menu items to the Main menu.  This is really part
+       * of the instance initialization, but cannot be executed until the
+       * Main Menu logic is ready.
+       *
+       * @return True on success
+       */
+
+      bool addMenuItems(void);
+
+      /**
        * Create a new window and add it to the window list.
+       *
+       * The window is initialized with all application events disabled.
+       * The CWindows::configureEvents() method may be called as a second
+       * initialization step in order to enable application events.
        *
        * @param name       The window name
        * @param sbitmap    The Icon bitmap
@@ -147,7 +231,7 @@ namespace Twm4Nx
        */
 
       FAR CWindow *
-        createWindow(FAR const char *name,
+        createWindow(FAR NXWidgets::CNxString &name,
                      FAR const struct NXWidgets::SRlePaletteBitmap *sbitmap,
                      FAR CIconMgr *iconMgr, uint8_t flags);
 
@@ -155,12 +239,15 @@ namespace Twm4Nx
        * Handle the EVENT_WINDOW_DELETE event.  The logic sequence is as
        * follows:
        *
-       * 1. The TERMINATE button in pressed in the Window Toolbar
-       * 2. CWindowFactory::event receives the widget event,
-       *    EVENT_WINDOW_TERMINATE and request to halt the  NX Server
+       * 1. The TERMINATE button in pressed in the Window Toolbar and
+       *    CWindow::handleActionEvent() catches the button event on the
+       *    event listener thread and generates the EVENT_WINDOW_TERMINATE
+       * 2. CWindows::event receives the widget event, EVENT_WINDOW_TERMINATE,
+       *    on the Twm4NX manin threadand requests to halt the  NX Server
        *    messages queues.
-       * 3. The server responds with the EVENT_WINDOW_DELETE which is
-       *    caught by this function.
+       * 3. when server responds, the CwindowsEvent::handleBlockedEvent
+       *    generates the EVENT_WINDOW_DELETE which is caught by
+       *    CWindows::event() and which, in turn calls this function.
        *
        * @param cwin The CWindow instance.  This will be deleted and its
        *   associated container will be freed.
@@ -169,15 +256,46 @@ namespace Twm4Nx
       void destroyWindow(FAR CWindow *cwin);
 
       /**
-       * Return the head of the window list.
+       * Pick a position for a new Icon on the desktop.  Tries to avoid
+       * collisions with other Icons and reserved areas on the background
        *
-       * @return The head of the window list.
+       * @param cwin The window being iconified.
+       * @param defPos The default position to use if there is no free
+       *   region on the desktop.
+       * @param iconPos The selected Icon position.  Might be the same as
+       *   the default position.
+       * @return True is returned on success
        */
 
-      inline FAR struct SWindow *windowHead(void)
-      {
-        return m_windowHead;
-      }
+      bool placeIcon(FAR CWindow *cwin,
+                     FAR const struct nxgl_point_s &defPos,
+                     FAR struct nxgl_point_s &iconPos);
+
+      /**
+       * Redraw icons.  The icons are drawn on the background window.  When
+       * the background window receives a redraw request, it will call this
+       * method in order to redraw any effected icons drawn in the
+       * background.
+       *
+       * @param nxRect The region in the background to be redrawn
+       */
+
+       void redrawIcons(FAR const nxgl_rect_s *nxRect);
+
+      /**
+       * Check if the icon within iconBounds collides with any other icon on
+       * the desktop.
+       *
+       * @param cwin The window containing the Icon of interest
+       * @param iconBounds The candidate Icon bounding box
+       * @param collision The bounding box of the icon that the candidate
+       *   collides with
+       * @return Returns true if there is a collision
+       */
+
+      bool checkCollision(FAR CWindow *cwin,
+                          FAR const struct nxgl_rect_s &iconBounds,
+                          FAR struct nxgl_rect_s &collision);
 
       /**
        * Handle WINDOW events.

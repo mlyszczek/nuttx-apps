@@ -17,6 +17,8 @@ menuconfig GRAPHICS_TWM4NX
 
 if GRAPHICS_TWM4NX
 
+comment "Twm4Nx Core Configuration"
+
 config TWM4NX_PROGNAME
 	string "Twm4Nx program name"
 	default "twm4nx"
@@ -96,6 +98,7 @@ choice
 
 config TWM4NX_MOUSE
 	bool "Mouse"
+	select NX_SWCURSOR
 
 config TWM4NX_TOUCHSCREEN
 	bool "Touchscreen"
@@ -106,6 +109,29 @@ config TWM4NX_MOUSE_DEVPATH
 	string "Path to input device"
 	default "/dev/mouse0" if TWM4NX_MOUSE
 	default "/dev/input0" if TWM4NX_TOUCHSCREEN
+
+choice
+	prompt "Twm4Nx Theme"
+	default TWM4NX_CLASSIC
+
+config TWM4NX_CLASSIC
+	bool "Classic"
+	---help---
+		Strong bordered windows with dark primary colors.  Reminiscent of
+		Windows 98.
+
+config TWM4NX_CONTEMPORARY
+	bool "Contemporary"
+	---help---
+		Border-less windows in pastel shades for a more contemporary look.
+
+endchoice # Twm4Nx Theme
+
+config TWM4NX_ICONMGR_NCOLUMNS
+	int "Icon Manager columns"
+	default 4
+	---help---
+		The number of buttons in one row of the Icon Manager.
 
 config TWM4NX_DEBUG
 	bool "Force debug output"
@@ -121,5 +147,7 @@ config TWM4NX_DEBUG
 		basic debug output settings CONFIG_DEBUG_INFO, CONFIG_DEBUG_WARN,
 		and CONFIG_DEBUG_ERROR (but not the corresponding
 		CONFIG_DEBUG_GRAPHICS_* settings)
+
+source "$APPSDIR/graphics/twm4nx/apps/Kconfig"
 
 endif # GRAPHICS_TWM4NX

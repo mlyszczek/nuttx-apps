@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// apps/graphics/twm4nx/include/cbackground.hxx
+// apps/graphics/twm4nx/include/cbackground.cxx
 // Manage background image
 //
 //   Copyright (C) 2019 Gregory Nutt. All rights reserved.
@@ -40,6 +40,9 @@
 
 #include <nuttx/config.h>
 
+#include <cfcntl>
+#include <cerrno>
+
 #include <nuttx/nx/nxglib.h>
 
 #include "graphics/nxwidgets/cscaledbitmap.hxx"
@@ -51,7 +54,8 @@
 
 #include "graphics/twm4nx/twm4nx_config.hxx"
 #include "graphics/twm4nx/cwindowevent.hxx"
-#include "graphics/twm4nx/cicon.hxx"
+#include "graphics/twm4nx/cwindowfactory.hxx"
+#include "graphics/twm4nx/cmainmenu.hxx"
 #include "graphics/twm4nx/cbackground.hxx"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -69,8 +73,11 @@ using namespace Twm4Nx;
 CBackground::CBackground(FAR CTwm4Nx *twm4nx)
 {
   m_twm4nx      = twm4nx;                    // Save the session instance
+  m_eventq      = (mqd_t)-1;                 // No NxWidget event message queue yet
   m_backWindow  = (NXWidgets::CBgWindow *)0; // No background window yet
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
   m_backImage   = (NXWidgets::CImage *)0;    // No background image yet
+#endif
 }
 
 /**
@@ -79,30 +86,9 @@ CBackground::CBackground(FAR CTwm4Nx *twm4nx)
 
 CBackground::~CBackground(void)
 {
-  // Delete the background
+  // Free resources helf by the background
 
-  if (m_backWindow != (NXWidgets::CBgWindow *)0)
-    {
-      // Delete the contained widget control.  We are responsible for it
-      // because we created it
-
-      NXWidgets::CWidgetControl *control = m_backWindow->getWidgetControl();
-      if (control != (NXWidgets::CWidgetControl *)0)
-        {
-          delete control;
-        }
-
-      // Then delete the background
-
-      delete m_backWindow;
-    }
-
-  // Delete the background image
-
-  if (m_backImage != (NXWidgets::CImage *)0)
-    {
-      delete m_backImage;
-    }
+  cleanup();
 }
 
 /**
@@ -119,26 +105,40 @@ bool CBackground::
 {
   twminfo("Create the background window\n");
 
+  // Open a message queue to send fully digested NxWidget events.
+
+  FAR const char *mqname = m_twm4nx->getEventQueueName();
+
+  m_eventq = mq_open(mqname, O_WRONLY | O_NONBLOCK);
+  if (m_eventq == (mqd_t)-1)
+    {
+      twmerr("ERROR: Failed open message queue '%s': %d\n",
+             mqname, errno);
+      return false;
+    }
+
   // Create the background window (if we have not already done so)
 
   if (m_backWindow == (NXWidgets::CBgWindow *)0 &&
       !createBackgroundWindow())
     {
       twmerr("ERROR: Failed to create the background window\n");
+      cleanup();
       return false;
     }
 
   twminfo("Create the background image\n");
 
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
   // Create the new background image
 
   if (!createBackgroundImage(sbitmap))
     {
       twmerr("ERROR: Failed to create the background image\n");
-      delete m_backWindow;
-      m_backWindow = (NXWidgets::CBgWindow *)0;
+      cleanup();
       return false;
     }
+#endif
 
   return true;
 }
@@ -168,6 +168,108 @@ void CBackground::getDisplaySize(FAR struct nxgl_size_s &size)
 }
 
 /**
+ * Check if the region within 'bounds' collides with any other reserved
+ * region on the desktop.  This is used for icon placement.
+ *
+ * @param iconBounds The candidate bounding box
+ * @param collision The bounding box of the reserved region that the
+ *   candidate collides with
+ * @return Returns true if there is a collision
+ */
+
+bool CBackground::checkCollision(FAR const struct nxgl_rect_s &bounds,
+                                 FAR struct nxgl_rect_s &collision)
+{
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
+  // Is there a background image
+
+  if (m_backImage != (NXWidgets::CImage *)0)
+    {
+      // Create a bounding box for the background image
+
+      struct nxgl_size_s imageSize;
+      m_backImage->getSize(imageSize);
+
+      struct nxgl_point_s imagePos;
+      m_backImage->getPos(imagePos);
+
+      collision.pt1.x = imagePos.x;
+      collision.pt1.y = imagePos.y;
+      collision.pt2.x = imagePos.x + imageSize.w - 1;
+      collision.pt2.y = imagePos.y + imageSize.h - 1;
+
+      return nxgl_intersecting(&bounds, &collision);
+    }
+#endif
+
+  return false;
+}
+
+/**
+ * Handle the background window redraw.
+ *
+ * @param nxRect The region in the window that must be redrawn.
+ * @param more True means that more re-draw requests will follow
+ * @return true on success
+ */
+
+bool CBackground::redrawBackgroundWindow(FAR const struct nxgl_rect_s *rect,
+                                         bool more)
+{
+  twminfo("Redrawing..\n");
+
+  // Get the widget control from the background window
+
+  NXWidgets::CWidgetControl *control = m_backWindow->getWidgetControl();
+
+  // Get the graphics port for drawing on the background window
+
+  NXWidgets::CGraphicsPort *port = control->getGraphicsPort();
+
+  // Get the size of the region to redraw
+
+  struct nxgl_size_s redrawSize;
+  redrawSize.w = rect->pt2.x - rect->pt1.x + 1;
+  redrawSize.h = rect->pt2.y - rect->pt1.y + 1;
+
+  // Fill the redraw region with the background color
+
+  port->drawFilledRect(rect->pt1.x, rect->pt1.y,
+                       redrawSize.w, redrawSize.h,
+                       CONFIG_TWM4NX_DEFAULT_BACKGROUNDCOLOR);
+
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
+  if (m_backImage != (NXWidgets::CImage *)0)
+    {
+      // Does any part of the image need to be redrawn?
+
+      FAR NXWidgets::CRect cimageRect = m_backImage->getBoundingBox();
+
+      struct nxgl_rect_s imageRect;
+      cimageRect.getNxRect(&imageRect);
+
+      struct nxgl_rect_s intersection;
+      nxgl_rectintersect(&intersection, rect, &imageRect);
+
+      if (!nxgl_nullrect(&intersection))
+        {
+          // Then re-draw the background image on the window
+
+          m_backImage->enableDrawing();
+          m_backImage->redraw();
+        }
+    }
+#endif
+
+  // Now redraw any background icons that need to be redrawn
+
+  FAR CWindowFactory *factory = m_twm4nx->getWindowFactory();
+  factory->redrawIcons(rect);
+
+  return true;
+}
+
+/**
  * Handle EVENT_BACKGROUND events.
  *
  * @param eventmsg.  The received NxWidget WINDOW event message.
@@ -184,15 +286,46 @@ bool CBackground::event(FAR struct SEventMsg *eventmsg)
   bool success = true;
   switch (eventmsg->eventID)
     {
-      case EVENT_BACKGROUND_POLL:      // Poll for icon events
+     case EVENT_BACKGROUND_XYINPUT:    // Poll for icon mouse/touch events
         {
+          // This event message is sent from CWindowEvent whenever mouse,
+          // touchscreen, or keyboard entry events are received in the
+          // background window.
+
           NXWidgets::CWidgetControl *control =
             m_backWindow->getWidgetControl();
 
-          // pollEvents() returns true if any interesting event occurred.
+          FAR struct SXyInputEventMsg *xymsg =
+            (FAR struct SXyInputEventMsg *)eventmsg;
+
+          // pollEvents() returns true if any interesting event occurred
+          // within a widget that is associated with the background window.
           // false is not a failure.
 
-          (void)control->pollEvents();
+          if (!control->pollEvents())
+            {
+              // If there is no interesting widget event, then this might be
+              // a background click.  In that case, we should bring up the
+              // main menu (if it is not already up).
+
+              showMainMenu(xymsg->pos, xymsg->buttons);
+            }
+
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
+          // If there is a background image, then clicking the background
+          // image is equivalent to clicking the background.  We need to
+          // handle this case because the image widget occludes the
+          // background
+
+          else if (m_backImage != (NXWidgets::CImage *)0 &&
+                   m_backImage->isClicked())
+            {
+              // Treat the image click like background click:  Bring up the
+              // main menu (if it is not already up).
+
+              showMainMenu(xymsg->pos, xymsg->buttons);
+            }
+#endif
         }
         break;
 
@@ -230,8 +363,17 @@ bool CBackground::createBackgroundWindow(void)
   // 3. Create a Widget control instance for the window using the default
   //    style for now.  CWindowEvent derives from CWidgetControl.
 
+  struct SAppEvents events;
+  events.eventObj    = (FAR void *)this;
+  events.redrawEvent = EVENT_BACKGROUND_REDRAW;
+  events.resizeEvent = EVENT_SYSTEM_NOP;
+  events.mouseEvent  = EVENT_BACKGROUND_XYINPUT;
+  events.kbdEvent    = EVENT_SYSTEM_NOP;
+  events.closeEvent  = EVENT_SYSTEM_NOP;
+  events.deleteEvent = EVENT_WINDOW_DELETE;
+
   FAR CWindowEvent *control =
-    new CWindowEvent(m_twm4nx, (FAR void *)this, true);
+    new CWindowEvent(m_twm4nx, (FAR void *)0, events);
 
   // Create the background window (CTwm4Nx inherits from CNxServer)
 
@@ -280,6 +422,7 @@ bool CBackground::createBackgroundWindow(void)
  * @return true on success
  */
 
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
 bool CBackground::
   createBackgroundImage(FAR const struct NXWidgets::SRlePaletteBitmap *sbitmap)
 {
@@ -345,75 +488,95 @@ bool CBackground::
       return false;
     }
 
-  // Configure and draw the background image
+  // Configure and draw the background image.
+  // NOTE that we need to get events from the background image.  That is
+  // because the image occludes the background and we have to treat image
+  // clicks just as background clicks.
 
   m_backImage->setBorderless(true);
-  m_backImage->setRaisesEvents(false);
+  m_backImage->setRaisesEvents(true);
 
   m_backImage->enable();
   m_backImage->enableDrawing();
   m_backImage->redraw();
   return true;
 }
+#endif
 
 /**
- * Handle the background window redraw.
+ * Bring up the main menu (if it is not already up).
  *
- * @param nxRect The region in the window that must be redrawn.
- * @param more True means that more re-draw requests will follow
- * @return true on success
+ * @param pos The window click position.
+ * @param buttons The set of mouse button presses.
  */
 
-bool CBackground::redrawBackgroundWindow(FAR const struct nxgl_rect_s *rect,
-                                         bool more)
+void CBackground::showMainMenu(FAR struct nxgl_point_s &pos,
+                               uint8_t buttons)
 {
-  twminfo("Redrawing..\n");
+  // Is the main menu already up?  Was the mouse left button pressed?
 
-  // Get the widget control from the background window
+  FAR CMainMenu *cmain = m_twm4nx->getMainMenu();
+  if (!cmain->isVisible() && (buttons & MOUSE_BUTTON_1) != 0)
+    {
+      // Bring up the main menu
 
-  NXWidgets::CWidgetControl *control = m_backWindow->getWidgetControl();
+      struct SEventMsg outmsg;
+      outmsg.eventID = EVENT_MAINMENU_SELECT;
+      outmsg.pos.x   = pos.x;
+      outmsg.pos.y   = pos.y;
+      outmsg.context = EVENT_CONTEXT_BACKGROUND;
+      outmsg.handler = (FAR void *)0;
+      outmsg.obj     = (FAR void *)this;
 
-  // Get the graphics port for drawing on the background window
+      int ret = mq_send(m_eventq, (FAR const char *)&outmsg,
+                        sizeof(struct SEventMsg), 100);
+      if (ret < 0)
+        {
+          twmerr("ERROR: mq_send failed: %d\n", errno);
+        }
+   }
+}
 
-  NXWidgets::CGraphicsPort *port = control->getGraphicsPort();
+/**
+ * Release resources held by the background.
+ */
 
-  // Get the size of the region to redraw
+void CBackground::cleanup(void)
+{
+  // Close the NxWidget event message queue
 
-  struct nxgl_size_s redrawSize;
-  redrawSize.w = rect->pt2.x - rect->pt1.x + 1;
-  redrawSize.h = rect->pt2.y - rect->pt1.y + 1;
+  if (m_eventq != (mqd_t)-1)
+    {
+      (void)mq_close(m_eventq);
+      m_eventq = (mqd_t)-1;
+    }
 
-  // Fill the redraw region with the background color
-
-  port->drawFilledRect(rect->pt1.x, rect->pt1.y,
-                       redrawSize.w, redrawSize.h,
-                       CONFIG_TWM4NX_DEFAULT_BACKGROUNDCOLOR);
+#ifdef CONFIG_TWM4NX_BACKGROUND_HASIMAGE
+  // Delete the background image
 
   if (m_backImage != (NXWidgets::CImage *)0)
     {
-      // Does any part of the image need to be redrawn?
-
-      FAR NXWidgets::CRect cimageRect = m_backImage->getBoundingBox();
-
-      struct nxgl_rect_s imageRect;
-      cimageRect.getNxRect(&imageRect);
-
-      struct nxgl_rect_s intersection;
-      nxgl_rectintersect(&intersection, rect, &imageRect);
-
-      if (!nxgl_nullrect(&intersection))
-        {
-          // Then re-draw the background image on the window
-
-          m_backImage->enableDrawing();
-          m_backImage->redraw();
-        }
+      delete m_backImage;
+      m_backImage = (NXWidgets::CImage *)0;
     }
+#endif
 
-  // Now redraw any background icons that need to be redrawn
+  // Delete the background
 
-  FAR CIcon *cicon = m_twm4nx->getIcon();
-  cicon->redrawIcons(rect, more);
+  if (m_backWindow != (NXWidgets::CBgWindow *)0)
+    {
+      // Delete the contained widget control.  We are responsible for it
+      // because we created it
 
-  return true;
+      NXWidgets::CWidgetControl *control = m_backWindow->getWidgetControl();
+      if (control != (NXWidgets::CWidgetControl *)0)
+        {
+          delete control;
+        }
+
+      // Then delete the background
+
+      delete m_backWindow;
+      m_backWindow = (NXWidgets::CBgWindow *)0;
+    }
 }
